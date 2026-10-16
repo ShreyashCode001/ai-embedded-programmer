@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Driven Embedded Programmer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='4' fill='%230f1115' stroke='%2333d6c0' stroke-width='2'/%3E%3Cpath d='M18 7l-7 10h5l-2 8 7-10h-5z' fill='%2333d6c0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="4" width="24" height="24" rx="5"/><path d="M18 7l-7 10h5l-2 8 7-10h-5z"/></svg>
+    <span>AI-Driven Embedded Programmer</span>
+  </div>
+  <div class="project-picker">
+    <select id="projectSelect" title="Your projects"></select>
+    <button id="newProjectBtn" class="btn ghost" title="New project">＋ New</button>
+    <button id="projectMenuBtn" class="btn ghost icon" title="Rename or delete project">⋯</button>
+    <div id="projectMenu" class="menu hidden">
+      <button data-act="rename">Rename</button>
+      <button data-act="board">Board &amp; wiring…</button>
+      <button data-act="export">Download as .zip</button>
+      <button data-act="vscode">Open in VS Code</button>
+      <button data-act="folder">Open folder</button>
+      <button data-act="clear">Clear chat (keep code)</button>
+      <button data-act="delete" class="danger">Delete project</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="model-picker">
+    <label for="modelSelect">Model</label>
+    <select id="modelSelect"></select>
+  </div>
+  <span id="idfPill" class="pill" title="ESP-IDF status">ESP-IDF…</span>
+  <button id="boardBtn" class="btn ghost">Board</button>
+  <button id="settingsBtn" class="btn ghost">Settings</button>
+</header>
+
+<main class="layout">
+  <!-- ======================= CHAT ======================= -->
+  <section class="chat" aria-label="Chat">
+    <div id="messages" class="messages"></div>
+    <div id="emptyChat" class="empty-chat hidden">
+      <h2>What should your ESP32 do?</h2>
+      <p>Describe it in plain English. Then keep chatting to change it.</p>
+      <div class="chips" id="exampleChips"></div>
+    </div>
+    <form id="chatForm" class="composer">
+      <textarea id="chatInput" rows="3" placeholder="e.g. Read a DHT22 on GPIO 4 every 2 seconds and print temperature and humidity"></textarea>
+      <div class="composer-row">
+        <span class="hint">Enter to send · Shift+Enter for a new line</span>
+        <button type="button" id="stopBtn" class="btn hidden">■ Stop</button>
+        <button type="submit" id="sendBtn" class="btn primary">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <div class="splitter" id="splitter" title="Drag to resize"></div>
+
+  <!-- ======================= CODE ======================= -->
+  <section class="code" aria-label="Code">
+    <div class="code-toolbar">
+      <span class="file">main.c</span>
+      <span id="versionLabel" class="badge">no code yet</span>
+      <span id="dirtyBadge" class="badge warn hidden" title="You edited the code. It is saved as a version when you build, chat, or press Ctrl+S.">edited</span>
+      <span id="apiBadge" class="badge hidden"></span>
+      <div class="spacer"></div>
+      <select id="versionSelect" title="Version history"></select>
+      <button id="diffBtn" class="btn ghost" title="Show what the last change did">Changes</button>
+      <button id="undoBtn" class="btn ghost" title="Go back to the previous version">Undo</button>
+      <button id="saveBtn" class="btn ghost" title="Save your edits as a new version (Ctrl+S)">Save</button>
+      <button id="explainBtn" class="btn ghost" title="Explain this code in simple words">Explain</button>
+      <button id="copyBtn" class="btn ghost" title="Copy code">Copy</button>
+    </div>
+    <div id="diffBar" class="diff-bar hidden">
+      <span id="diffLabel">Changes</span>
+      <div class="spacer"></div>
+      <button id="diffUndoBtn" class="btn ghost">Undo this change</button>
+      <button id="diffCloseBtn" class="btn">Back to editor</button>
+    </div>
+    <div class="editor-wrap">
+      <div id="editor" class="editor"></div>
+      <div id="diffEditor" class="editor hidden"></div>
+      <div id="editorLoading" class="editor-loading">Loading editor…</div>
+      <div id="editorEmpty" class="editor-empty hidden">
+        <div>Your ESP32 code will appear here.</div>
+        <div class="dim">Describe what you want in the chat, or start typing C code yourself.</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="buildBtn" class="btn primary" title="Compile with ESP-IDF">⚙ Build</button>
+      <button id="fixBtn" class="btn" title="Send the build errors to the AI and rebuild">✦ Fix with AI</button>
+      <button id="simBtn" class="btn" title="Run in the ESP32 simulator (QEMU)">▶ Simulate</button>
+      <div class="sep"></div>
+      <select id="portSelect" title="Board serial port"></select>
+      <button id="portRefresh" class="btn ghost icon" title="Refresh ports">↻</button>
+      <button id="flashBtn" class="btn" title="Build and flash to the board">⚡ Flash</button>
+      <button id="monitorBtn" class="btn" title="Show the board's serial output">⌁ Monitor</button>
+      <div class="spacer"></div>
+      <span id="jobStatus" class="job-status"></span>
+    </div>
+
+    <div class="panel">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="output">Output</button>
+        <button class="tab" data-tab="problems">Problems <span id="problemCount" class="count hidden">0</span></button>
+        <button class="tab" data-tab="serial">Serial</button>
+        <div class="spacer"></div>
+        <button id="clearPanel" class="btn ghost small">Clear</button>
+      </div>
+      <pre id="outputPane" class="pane"></pre>
+      <div id="problemsPane" class="pane hidden"></div>
+      <div id="serialPane" class="pane serial hidden">
+        <pre id="serialLog"></pre>
+        <form id="serialForm" class="serial-input">
+          <input id="serialInput" placeholder="Send text to the board (needs Monitor)" autocomplete="off">
+          <button class="btn small" type="submit">Send</button>
+          <button class="btn small ghost" type="button" id="resetBoardBtn">Reset board</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= DIALOGS ======================= -->
+<dialog id="settingsDialog" class="dialog">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <fieldset>
+      <legend>AI model</legend>
+      <label class="row"><span>Use</span>
+        <select name="provider">
+          <option value="groq">Groq cloud (best quality, needs internet)</option>
+          <option value="ollama">Local model on this laptop (Ollama, offline)</option>
+        </select></label>
+      <label class="row"><span>Groq API key</span><input name="groq_api_key" type="password" autocomplete="off" placeholder="Paste your free key from console.groq.com/keys"></label>
+      <label class="row"><span>Groq model</span><select name="groq_model"></select></label>
+      <label class="row"><span>Local model</span><input name="ollama_model" placeholder="qwen2.5-coder:7b"></label>
+      <label class="row"><span>Ollama address</span><input name="ollama_host"></label>
+      <label class="row"><span>Creativity</span><input name="temperature" type="number" min="0" max="1" step="0.1"></label>
+      <div class="row"><span></span><button type="button" id="testModelBtn" class="btn">Test connection</button></div>
+      <p id="testResult" class="note"></p>
+    </fieldset>
+    <fieldset>
+      <legend>Automation</legend>
+      <label class="check"><input type="checkbox" name="auto_build"> Build automatically after every AI change</label>
+      <label class="check"><input type="checkbox" name="auto_fix"> Fix build errors automatically with the AI</label>
+      <label class="row"><span>Max auto-fix tries</span><input name="max_fix_attempts" type="number" min="0" max="5"></label>
+      <label class="row"><span>ESP-IDF examples given to the AI</span><input name="examples_in_prompt" type="number" min="0" max="3"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Board &amp; tools</legend>
+      <label class="row"><span>Serial monitor baud</span><input name="serial_baud" type="number"></label>
+      <label class="row"><span>Flash baud</span><input name="flash_baud" type="number"></label>
+      <label class="row"><span>Simulator run time (s)</span><input name="sim_seconds" type="number" min="3" max="60"></label>
+      <details>
+        <summary>ESP-IDF location (only if it is not found automatically)</summary>
+        <label class="row"><span>ESP-IDF folder</span><input name="idf_path" placeholder="C:\Espressif\frameworks\esp-idf-v5.5.5"></label>
+        <label class="row"><span>Tools folder</span><input name="idf_tools_path" placeholder="C:\Espressif"></label>
+        <label class="row"><span>ESP-IDF Python</span><input name="idf_python" placeholder="C:\Espressif\python_env\idf5.5_py3.13_env\Scripts\python.exe"></label>
+      </details>
+      <p id="idfInfo" class="note"></p>
+    </fieldset>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="save" id="settingsSave" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="boardDialog" class="dialog">
+  <form method="dialog" id="boardForm">
+    <h2>Board &amp; wiring</h2>
+    <p class="note">Tell the AI what is connected and where. It will use exactly these pins.</p>
+    <label class="row"><span>Board</span><input name="name"></label>
+    <table class="parts">
+      <thead><tr><th>Part</th><th>Pins</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="partsBody"></tbody>
+    </table>
+    <button type="button" id="addPartBtn" class="btn ghost small">＋ Add part</button>
+    <label class="row stack"><span>Other notes for the AI</span><textarea name="notes" rows="2" placeholder="e.g. Active-low relay module, powered from 5 V"></textarea></label>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="save" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="promptDialog" class="dialog small">
+  <form method="dialog">
+    <h2 id="promptTitle">Name</h2>
+    <input id="promptInput" autocomplete="off">
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="ok" class="btn primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+  window.MONACO_LOCAL = "/static/vendor/monaco/vs";
+  window.MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
+</script>
+<script src="/static/js/markdown.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

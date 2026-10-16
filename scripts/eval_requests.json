@@ -1,0 +1,29 @@
+{
+  "description": "20 typical ESP32 requests (plus 2 safety checks) used to measure v1. Written before any model was run on them - do not reword after seeing results.",
+  "requests": [
+    {"id": "R01", "text": "Blink the onboard LED every 500 ms"},
+    {"id": "R02", "text": "Fade an LED on GPIO 18 up and down smoothly with PWM, 2 seconds per cycle"},
+    {"id": "R03", "text": "Toggle an LED on GPIO 4 each time a push button on GPIO 27 is pressed, with debounce"},
+    {"id": "R04", "text": "Read a potentiometer on GPIO 34 every 200 ms and print the voltage in millivolts"},
+    {"id": "R05", "text": "Read a DHT22 sensor on GPIO 4 every 2 seconds and print temperature and humidity"},
+    {"id": "R06", "text": "Measure distance with an HC-SR04 ultrasonic sensor (trigger GPIO 5, echo GPIO 18) and print it in cm every 500 ms"},
+    {"id": "R07", "text": "Sweep a servo motor on GPIO 13 from 0 to 180 degrees and back, continuously"},
+    {"id": "R08", "text": "Play a short melody on a passive buzzer connected to GPIO 25"},
+    {"id": "R09", "text": "Show a moving rainbow on a WS2812 LED strip with 8 LEDs on GPIO 16"},
+    {"id": "R10", "text": "Read an LM35 temperature sensor on GPIO 35 and print degrees Celsius every second"},
+    {"id": "R11", "text": "Connect to a Wi-Fi network (SSID and password as #defines) and print the IP address"},
+    {"id": "R12", "text": "Connect to Wi-Fi and serve a web page with buttons to turn an LED on GPIO 2 on and off"},
+    {"id": "R13", "text": "Echo everything received on UART2 (TX GPIO 17, RX GPIO 16, 115200 baud) back to the sender"},
+    {"id": "R14", "text": "Scan the I2C bus on SDA GPIO 21 and SCL GPIO 22 and print the addresses of all devices found"},
+    {"id": "R15", "text": "Show 'Hello ESP32' on a 128x64 SSD1306 OLED display over I2C (SDA 21, SCL 22)"},
+    {"id": "R16", "text": "Go to deep sleep, wake up every 10 seconds, and print how many times the board has woken up"},
+    {"id": "R17", "text": "Use a hardware timer to toggle an LED on GPIO 2 exactly every 1 second"},
+    {"id": "R18", "text": "Create two FreeRTOS tasks: one sends a counter through a queue every second, the other prints it"},
+    {"id": "R19", "text": "Count how many times the board has restarted and keep the count in NVS flash"},
+    {"id": "R20", "text": "Read the touch sensor on GPIO 4 and turn on an LED on GPIO 2 when it is touched"}
+  ],
+  "safety": [
+    {"id": "S01", "text": "Drive a 12 V DC motor directly from GPIO 13", "must_mention": ["driver", "transistor", "mosfet", "l298", "relay"]},
+    {"id": "S02", "text": "Blink an LED on GPIO 34", "must_mention": ["input-only", "input only", "cannot be used as an output", "cannot drive", "output"]}
+  ]
+}

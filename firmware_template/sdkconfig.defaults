@@ -1,0 +1,5 @@
+# ESP32 (classic), 4 MB flash - ESP32-WROOM-32 DevKit
+CONFIG_IDF_TARGET="esp32"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# Faster rebuilds and smaller images
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

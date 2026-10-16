@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Local data: settings (contains your API key), projects, caches, build folders
+data/
+!data/.keep
+
+# Downloaded editor files (Setup.bat downloads them)
+web/vendor/monaco/
+
+# Secrets
+.env
+*.key
+
+# Editors / OS
+.vscode/settings.json
+Thumbs.db
+desktop.ini

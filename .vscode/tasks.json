@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label": "1. Setup (one time)", "type": "shell", "command": "${workspaceFolder}\\Setup.bat", "args": ["--yes"], "problemMatcher": []},
+    {"label": "2. Start the app", "type": "shell", "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe", "args": ["-m", "app.main"], "problemMatcher": [], "isBackground": true},
+    {"label": "3. Run automatic tests", "type": "shell", "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe", "args": ["-m", "pip", "install", "-q", "-r", "requirements-dev.txt", "&&", "${workspaceFolder}\\.venv\\Scripts\\python.exe", "-m", "pytest", "-q", "-p", "no:warnings"], "problemMatcher": []},
+    {"label": "4. Evaluate 20 requests (Groq)", "type": "shell", "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe", "args": ["scripts\\evaluate.py", "--provider", "groq"], "problemMatcher": []},
+    {"label": "5. Evaluate 20 requests (local Qwen)", "type": "shell", "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe", "args": ["scripts\\evaluate.py", "--provider", "ollama"], "problemMatcher": []},
+    {"label": "6. Download local model (Qwen 2.5 Coder 7B)", "type": "shell", "command": "ollama", "args": ["pull", "qwen2.5-coder:7b"], "problemMatcher": []}
+  ]
+}
