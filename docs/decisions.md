@@ -62,7 +62,7 @@ that later research features (D-45) plug into.
 **Replaces:** D-03, D-05, D-06, D-09 – D-23, D-25 – D-29.
 
 ### D-31 · New repository, built from scratch
-**Status:** Decided
+**Status:** Decided (repository name and visibility replaced by D-46)
 Repository and folder name: `AI-Driven-Embedded-Programmer` (GitHub does not
 allow spaces). Private until the paper is submitted. The older prototype in
 `ai-embedded-programmer` is left untouched on the laptop.
@@ -178,9 +178,17 @@ extra components and other chips come later.
 - Testing on the real board (serial output checks).
 - More boards (ESP32-S3/C3) and multi-file projects.
 
+### D-46 · Code is on GitHub in the public repo `ai-embedded-programmer`
+**Status:** Decided (19 Oct 2026, team's choice; replaces the name/privacy part of D-31)
+Pushed to https://github.com/ShreyashCode001/ai-embedded-programmer (public).
+Anyone can read the code. Settings, the Groq API key and projects stay on the
+laptop in the git-ignored `data/` folder and are never pushed.
+The local folder keeps the name `AI-Driven-Embedded-Programmer`.
+
 ---
 
 ## Open questions
+- [x] Push the code to GitHub (D-46)
 - [ ] Run the 20-request evaluation with GPT-OSS 120B and with local Qwen (needs the Groq key) → `docs/EVALUATION.md`
 - [ ] Buy an ESP32 DevKit + basic parts to test Flash / Monitor on real hardware
 - [ ] Who has a Claude plan for Claude Code (D-07 from the first plan)
