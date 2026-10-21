@@ -217,6 +217,11 @@ def main() -> int:
         if m not in MODES:
             parser.error(f"unknown mode {m!r}")
 
+    if base["provider"] == "groq" and (EVAL_DIR / "PAUSE_GROQ").exists():
+        # Lets the team keep Groq's free daily limit for a demo: delete the file to continue.
+        log("=== Groq runs are paused (data/eval/PAUSE_GROQ exists). Delete that file and run again to continue. ===")
+        return 0
+
     keep_awake(True)
     try:
         for mode in modes:
