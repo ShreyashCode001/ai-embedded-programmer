@@ -137,6 +137,26 @@ def build_messages(
     return messages
 
 
+PLAIN_SYSTEM_PROMPT = (
+    "You are a helpful programming assistant. Write ESP32 firmware in C using ESP-IDF. "
+    "Reply with the complete main.c in one ```c code block."
+)
+
+
+def build_plain_messages(request: str, history: list[dict[str, Any]], current_code: str | None,
+                         max_history: int = 6) -> list[dict[str, str]]:
+    """Baseline prompt used only in evaluation: no ESP-IDF rules, no pin-safety rules,
+    no examples, no board information. Shows what the bare model does."""
+    messages = [{"role": "system", "content": PLAIN_SYSTEM_PROMPT}]
+    recent = [m for m in history if m.get("role") in ("user", "assistant") and m.get("kind", "chat") == "chat"]
+    for m in recent[-max_history:]:
+        messages.append({"role": m["role"], "content": m["content"]})
+    if current_code and current_code.strip() and not recent:
+        messages.append({"role": "user", "content": "Current main.c:\n```c\n" + current_code.strip() + "\n```"})
+    messages.append({"role": "user", "content": request})
+    return messages
+
+
 def fix_request(errors: list[dict[str, Any]], unknown: list[str], deprecated: list[str], tail: str = "") -> str:
     lines = ["The ESP-IDF v5.5 build of the CURRENT main.c failed."]
     if errors:

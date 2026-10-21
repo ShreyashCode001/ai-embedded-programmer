@@ -22,7 +22,8 @@ from app.esp import tools
 from app.esp.idf import Idf, IdfNotFound, get_idf
 from app.knowledge.api_index import check_code, get_api_index
 from app.knowledge.examples import get_index
-from app.llm.prompts import EXPLAIN_PROMPT, SYSTEM_PROMPT, build_messages, extract_code, fix_request
+from app.llm.prompts import (EXPLAIN_PROMPT, SYSTEM_PROMPT, build_messages, build_plain_messages,
+                              extract_code, fix_request)
 from app.llm.providers import LLMError, RequestTooLarge, make_provider
 from app.projects import Project
 
@@ -78,8 +79,8 @@ class Assistant:
 
     def _stream_reply(self, messages_for: Any, kind: str) -> Iterator[Event]:
         """Call the model; on 'too large', retry with less context. Yields events; last is ('reply', text)."""
-        attempts = [dict(examples=self.settings.get("examples_in_prompt", 2), history=6),
-                    dict(examples=1, history=4), dict(examples=0, history=2), dict(examples=0, history=0)]
+        wanted = int(self.settings.get("examples_in_prompt", 2))
+        attempts = [dict(examples=min(wanted, n), history=h) for n, h in ((wanted, 6), (1, 4), (0, 2), (0, 0))]
         last_error: Exception | None = None
         for i, plan in enumerate(attempts):
             messages, examples = messages_for(plan["examples"], plan["history"])
@@ -126,6 +127,9 @@ class Assistant:
         query = request + " " + " ".join(m["content"] for m in history[-2:] if m["role"] == "user")
 
         def messages_for(n_examples: int, n_history: int):
+            if self.settings.get("plain_prompt"):
+                # Baseline for evaluation: the bare model, no rules, examples or board info.
+                return build_plain_messages(request, history, current, max_history=n_history), []
             examples = self._examples(query, n_examples)
             return build_messages(request, history, board, examples, current, max_history=n_history), examples
 

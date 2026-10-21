@@ -1,20 +1,33 @@
-"""Measure the app on 20 typical requests with the model chosen in Settings.
+"""Evaluate the app on fixed requests, in several setups ("modes"), with any model.
 
-    .venv\\Scripts\\python scripts\\evaluate.py            (Windows)
-    .venv\\Scripts\\python scripts\\evaluate.py --only R01,R05
-    .venv\\Scripts\\python scripts\\evaluate.py --provider ollama
+Modes (what is switched on):
+    full         our complete system: ESP-IDF rules + pin safety + matching official
+                 examples + made-up-function check + build + auto-fix (max 3)
+    no_examples  full system, but no ESP-IDF examples in the prompt      (ablation)
+    no_fix       full system, but no auto-fix after a failed build       (ablation)
+    plain        the bare model: a one-line instruction, no rules, no examples,
+                 no auto-fix (baseline, "general LLM code")
 
-For each request: one chat turn exactly like the app (examples, model, fake-
-function check, real ESP-IDF build, auto-fix up to 3 times), then a short run
-in the simulator if it built. Results go to data/eval/<time>.json and a
-readable summary to data/eval/<time>.md. Each request runs in its own project
-named "eval ...", which you can open in the app afterwards.
+Every mode builds the result with the real ESP-IDF and runs it in the simulator.
+
+Examples (Windows):
+    .venv\\Scripts\\python scripts\\evaluate.py --provider groq --mode full
+    .venv\\Scripts\\python scripts\\evaluate.py --provider ollama --mode all
+    .venv\\Scripts\\python scripts\\evaluate.py --provider groq --mode plain --only R01,R05
+
+Results: data/eval/<provider>__<model>__<mode>.jsonl (one line per request).
+Re-running the same command skips requests already done (resume), so a run
+stopped by Groq's daily limit can simply be started again the next day.
+Use --fresh to start a mode again from zero.
+Progress is also written to data/eval/progress.log.
+Make the comparison table with:  python scripts/eval_report.py
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from datetime import datetime
@@ -27,127 +40,180 @@ from app import projects  # noqa: E402
 from app.assistant import Assistant  # noqa: E402
 from app.config import DATA_DIR, load_settings  # noqa: E402
 from app.esp import tools  # noqa: E402
+from app.knowledge.api_index import check_code  # noqa: E402
+
+MODES = {
+    "full": {"examples_in_prompt": 2, "auto_fix": True, "plain_prompt": False},
+    "no_examples": {"examples_in_prompt": 0, "auto_fix": True, "plain_prompt": False},
+    "no_fix": {"examples_in_prompt": 2, "auto_fix": False, "plain_prompt": False},
+    "plain": {"examples_in_prompt": 0, "auto_fix": False, "plain_prompt": True},
+}
+EVAL_DIR = DATA_DIR / "eval"
+DAILY_LIMIT = re.compile(r"per day|tokens per day|TPD|requests per day|RPD|daily", re.IGNORECASE)
 
 
-def run_one(settings: dict, text: str, label: str) -> dict:
-    project = projects.create(f"eval {label}")
+def log(text: str) -> None:
+    line = f"{datetime.now():%Y-%m-%d %H:%M:%S}  {text}"
+    print(line, flush=True)
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    with open(EVAL_DIR / "progress.log", "a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+
+def keep_awake(on: bool) -> None:
+    """Stop Windows from sleeping while the evaluation runs (like a video player does)."""
+    if sys.platform.startswith("win"):
+        import ctypes
+
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
+
+
+def safe_name(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9.]+", "-", text).strip("-")
+
+
+def run_one(settings: dict, item: dict, mode: str) -> dict:
+    project = projects.create(f"eval {mode} {item['id']} {item['text'][:30]}")
     assistant = Assistant(settings)
     started = time.monotonic()
-    first_unknown, first_build, builds, fixes, error, reply = None, None, [], 0, "", ""
-    for ev in assistant.chat_turn(project, text, ""):
+    rec = {
+        "id": item["id"], "text": item["text"], "mode": mode,
+        "provider": settings["provider"],
+        "model": settings["groq_model"] if settings["provider"] == "groq" else settings["ollama_model"],
+        "project": project.id, "code_produced": False, "first_build_ok": None, "final_build_ok": False,
+        "fix_attempts": 0, "first_errors": 0, "unknown_first": [], "unknown_final": [],
+        "deprecated_first": [], "deprecated_final": [], "examples_used": [],
+        "llm_calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "error": "",
+        "simulator": None, "sim_lines": 0, "safety_warning_given": None, "reply_start": "",
+        "time": datetime.now().isoformat(timespec="seconds"),
+    }
+    builds = []
+    for ev in assistant.chat_turn(project, item["text"], ""):
         t = ev["type"]
-        if t == "version" and first_unknown is None and ev.get("api_check"):
-            first_unknown = ev["api_check"]["unknown"]
+        if t == "context":
+            rec["examples_used"] = [e["path"] for e in ev["examples"]]
+        elif t == "usage":
+            rec["prompt_tokens"] += ev.get("prompt_tokens") or 0
+            rec["completion_tokens"] += ev.get("completion_tokens") or 0
+        elif t == "message_done":
+            rec["llm_calls"] += 1
+            if ev["message"].get("kind") == "chat":
+                rec["reply_start"] = ev["message"]["content"][:600]
+        elif t == "version" and ev.get("api_check") and not builds:
+            rec["unknown_first"] = ev["api_check"]["unknown"]
+            rec["deprecated_first"] = ev["api_check"]["deprecated"]
         elif t == "build_result":
             builds.append(bool(ev.get("ok")))
-            if first_build is None:
-                first_build = bool(ev.get("ok"))
+            if len(builds) == 1:
+                rec["first_errors"] = len(ev.get("errors") or [])
         elif t == "fix_start":
-            fixes += 1
+            rec["fix_attempts"] += 1
         elif t == "error":
-            error = ev["text"]
-        elif t == "message_done" and ev["message"].get("kind") == "chat":
-            reply = ev["message"]["content"]
-        elif t == "status" and "limit" in ev.get("text", ""):
-            print("   ", ev["text"])
-    seconds = round(time.monotonic() - started, 1)
-    sim = None
-    if builds and builds[-1] and tools.built_code() == project.code():
+            rec["error"] = ev["text"]
+        elif t == "status" and ("limit" in ev.get("text", "") or "waiting" in ev.get("text", "")):
+            log(f"      {ev['text']}")
+    rec["seconds"] = round(time.monotonic() - started, 1)
+    code = project.code()
+    rec["code_produced"] = bool(code.strip())
+    rec["first_build_ok"] = builds[0] if builds else None
+    rec["final_build_ok"] = bool(builds and builds[-1])
+    api = assistant._api()
+    if code.strip() and api is not None:
+        final = check_code(code, api)
+        rec["unknown_final"], rec["deprecated_final"] = final.unknown, final.deprecated
+    if rec["final_build_ok"] and tools.built_code() == code:
         idf = assistant.idf()
         if idf is not None:
-            result = [v for k, v in tools.simulate(idf, 6) if k == "result"]
-            sim = result[0] if result else None
-    return {
-        "project": project.id,
-        "seconds": seconds,
-        "code_produced": bool(project.code()),
-        "first_build_ok": first_build,
-        "final_build_ok": bool(builds and builds[-1]),
-        "fix_attempts": fixes,
-        "unknown_functions_first_try": first_unknown or [],
-        "simulator": None if sim is None else ("crash" if sim.get("crashed") else "ran"),
-        "error": error,
-        "reply_start": reply[:400],
-    }
+            lines, result = 0, {}
+            for kind, value in tools.simulate(idf, 6):
+                if kind == "log":
+                    lines += 1
+                else:
+                    result = value
+            rec["simulator"] = "crash" if result.get("crashed") else ("ran" if result.get("ok") else "not_run")
+            rec["sim_lines"] = lines
+    if "must_mention" in item:
+        text = " ".join(m["content"] for m in project.chat() if m["role"] == "assistant").lower()
+        rec["safety_warning_given"] = any(w in text for w in item["must_mention"])
+    return rec
+
+
+def run_mode(base: dict, mode: str, items: list[dict], fresh: bool, pause: float) -> str:
+    settings = dict(base)
+    settings.update(MODES[mode])
+    settings["auto_build"] = True
+    model = settings["groq_model"] if settings["provider"] == "groq" else settings["ollama_model"]
+    out = EVAL_DIR / f"{settings['provider']}__{safe_name(model)}__{mode}.jsonl"
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    if fresh and out.exists():
+        out.unlink()
+    done = set()
+    if out.exists():
+        for line in out.read_text(encoding="utf-8").splitlines():
+            try:
+                done.add(json.loads(line)["id"])
+            except (json.JSONDecodeError, KeyError):
+                pass
+    todo = [i for i in items if i["id"] not in done]
+    log(f"=== {settings['provider']} / {model} / mode={mode}: {len(todo)} to do, {len(done)} already done ===")
+    for n, item in enumerate(todo, 1):
+        log(f"[{n}/{len(todo)}] {item['id']}: {item['text']}")
+        rec = run_one(settings, item, mode)
+        if rec["error"] and DAILY_LIMIT.search(rec["error"]):
+            log(f"      STOPPED: daily model limit reached ({rec['error'][:160]}). Run the same command again tomorrow to continue.")
+            projects.delete(rec["project"])
+            return "daily_limit"
+        if rec["error"] and not rec["code_produced"] and ("Could not reach" in rec["error"] or "not running" in rec["error"]
+                                                         or "API key" in rec["error"]):
+            log(f"      STOPPED: {rec['error']}")
+            projects.delete(rec["project"])
+            return "error"
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        status = "BUILD OK" if rec["final_build_ok"] else ("NO CODE" if not rec["code_produced"] else "BUILD FAILED")
+        log(f"      {status} | first try {rec['first_build_ok']} | fixes {rec['fix_attempts']} | made-up {rec['unknown_first']}"
+            f" | sim {rec['simulator']} | {rec['seconds']} s | tokens {rec['prompt_tokens']}+{rec['completion_tokens']}"
+            + (f" | safety warning: {rec['safety_warning_given']}" if rec["safety_warning_given"] is not None else "")
+            + (f" | ERROR {rec['error'][:120]}" if rec["error"] else ""))
+        if n < len(todo):
+            time.sleep(pause)
+    log(f"=== finished mode={mode} ===")
+    return "ok"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", help="comma-separated ids, e.g. R01,R05")
     parser.add_argument("--provider", choices=["groq", "ollama"])
     parser.add_argument("--model")
-    parser.add_argument("--pause", type=float, default=5.0, help="seconds between requests (free-tier limits)")
+    parser.add_argument("--mode", default="full", help="full, no_examples, no_fix, plain, or all (comma list allowed)")
+    parser.add_argument("--only", help="comma-separated request ids, e.g. R01,R05,S01")
+    parser.add_argument("--pause", type=float, default=3.0, help="seconds between requests")
+    parser.add_argument("--fresh", action="store_true", help="start the mode(s) again from zero")
     args = parser.parse_args()
 
-    settings = load_settings()
-    settings["auto_build"] = True
-    settings["auto_fix"] = True
+    base = load_settings()
     if args.provider:
-        settings["provider"] = args.provider
+        base["provider"] = args.provider
     if args.model:
-        settings["groq_model" if settings["provider"] == "groq" else "ollama_model"] = args.model
-    model = settings["groq_model"] if settings["provider"] == "groq" else settings["ollama_model"]
+        base["groq_model" if base["provider"] == "groq" else "ollama_model"] = args.model
 
     spec = json.loads((ROOT / "scripts" / "eval_requests.json").read_text(encoding="utf-8"))
     wanted = set(args.only.split(",")) if args.only else None
     items = [r for r in spec["requests"] + spec["safety"] if not wanted or r["id"] in wanted]
+    modes = list(MODES) if args.mode == "all" else [m.strip() for m in args.mode.split(",")]
+    for m in modes:
+        if m not in MODES:
+            parser.error(f"unknown mode {m!r}")
 
-    print(f"Evaluating {len(items)} requests with {settings['provider']} / {model}\n")
-    results = []
-    for i, item in enumerate(items, 1):
-        print(f"[{i}/{len(items)}] {item['id']}: {item['text']}")
-        r = run_one(settings, item["text"], f"{item['id']} {item['text'][:40]}")
-        r.update({"id": item["id"], "text": item["text"]})
-        if "must_mention" in item:
-            low = r["reply_start"].lower() + " " + (projects.get(r["project"]).chat()[-1]["content"].lower()
-                                                     if projects.get(r["project"]).chat() else "")
-            r["safety_warning_given"] = any(word in low for word in item["must_mention"])
-        status = "BUILD OK" if r["final_build_ok"] else ("NO CODE" if not r["code_produced"] else "BUILD FAILED")
-        print(f"      {status} | first try: {r['first_build_ok']} | fixes: {r['fix_attempts']} | "
-              f"fake functions: {len(r['unknown_functions_first_try'])} | sim: {r['simulator']} | {r['seconds']} s"
-              + (f" | ERROR: {r['error']}" if r["error"] else ""))
-        results.append(r)
-        if i < len(items):
-            time.sleep(args.pause)
-
-    main_set = [r for r in results if r["id"].startswith("R")]
-    n = len(main_set) or 1
-    summary = {
-        "date": datetime.now().isoformat(timespec="seconds"),
-        "provider": settings["provider"],
-        "model": model,
-        "requests": len(main_set),
-        "build_ok_first_try": sum(1 for r in main_set if r["first_build_ok"]),
-        "build_ok_after_fixes": sum(1 for r in main_set if r["final_build_ok"]),
-        "avg_fix_attempts": round(sum(r["fix_attempts"] for r in main_set) / n, 2),
-        "requests_with_fake_functions": sum(1 for r in main_set if r["unknown_functions_first_try"]),
-        "simulator_crashes": sum(1 for r in main_set if r["simulator"] == "crash"),
-        "avg_seconds": round(sum(r["seconds"] for r in main_set) / n, 1),
-        "safety_warnings": {r["id"]: r.get("safety_warning_given") for r in results if r["id"].startswith("S")},
-    }
-    out_dir = DATA_DIR / "eval"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    (out_dir / f"{stamp}.json").write_text(json.dumps({"summary": summary, "results": results}, indent=2), encoding="utf-8")
-    lines = [
-        f"# Evaluation {summary['date']}", "",
-        f"Model: **{summary['provider']} / {summary['model']}**, ESP-IDF builds are real, simulator = QEMU.", "",
-        "| Measure | Result |", "|---|---|",
-        f"| Builds on the first try | {summary['build_ok_first_try']}/{summary['requests']} |",
-        f"| Builds after auto-fix (max 3) | {summary['build_ok_after_fixes']}/{summary['requests']} |",
-        f"| Average auto-fix attempts | {summary['avg_fix_attempts']} |",
-        f"| Requests where the first code used made-up functions | {summary['requests_with_fake_functions']} |",
-        f"| Crashed in the simulator | {summary['simulator_crashes']} |",
-        f"| Average time per request | {summary['avg_seconds']} s |",
-        f"| Safety warnings given | {summary['safety_warnings']} |", "",
-        "| Id | Request | First try | Final | Fixes | Made-up functions | Simulator | Time |", "|---|---|---|---|---|---|---|---|",
-    ]
-    for r in results:
-        lines.append(f"| {r['id']} | {r['text']} | {'✓' if r['first_build_ok'] else '✗'} | {'✓' if r['final_build_ok'] else '✗'} | "
-                     f"{r['fix_attempts']} | {', '.join(r['unknown_functions_first_try']) or '-'} | {r['simulator'] or '-'} | {r['seconds']} s |")
-    (out_dir / f"{stamp}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n" + "\n".join(lines[:12]))
-    print(f"\nSaved: {out_dir / (stamp + '.md')}")
+    keep_awake(True)
+    try:
+        for mode in modes:
+            result = run_mode(base, mode, items, args.fresh, args.pause)
+            if result != "ok":
+                return 3 if result == "daily_limit" else 2
+    finally:
+        keep_awake(False)
     return 0
 
 
