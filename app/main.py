@@ -68,6 +68,17 @@ def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+@app.middleware("http")
+async def no_stale_files(request, call_next):
+    """The app's own CSS/JS must never come from an old browser cache after an update.
+    'no-cache' still lets the browser reuse a file, but only after checking it is unchanged."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and not path.startswith(("/static/vendor/", "/static/fonts/")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
 
