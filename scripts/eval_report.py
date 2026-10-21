@@ -72,7 +72,48 @@ def metrics(rows: list[dict]) -> dict[str, str]:
     }
 
 
+def fill_missing_simulations() -> None:
+    """Run the simulator for built results that have no simulator result yet
+    (e.g. runs made while the simulator step was broken). Rebuilds each saved
+    project's final code first. Uses no model calls."""
+    from app import projects
+    from app.config import load_settings
+    from app.esp import tools
+    from app.esp.idf import IdfNotFound, get_idf
+
+    try:
+        idf = get_idf(load_settings())
+    except IdfNotFound:
+        return
+    for path in sorted(EVAL_DIR.glob("*.jsonl")):
+        rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        todo = [r for r in rows if r.get("final_build_ok") and r.get("simulator") in (None, "not_run")]
+        if not todo:
+            continue
+        print(f"Simulating {len(todo)} result(s) from {path.name} …", flush=True)
+        for r in todo:
+            try:
+                code = projects.get(r["project"]).code()
+            except Exception:
+                continue
+            ok = [v for k, v in tools.build(idf, code) if k == "result"]
+            if not ok or not ok[0].get("ok"):
+                continue
+            lines, result = 0, {}
+            for kind, value in tools.simulate(idf, 6):
+                if kind == "log":
+                    lines += 1
+                else:
+                    result = value
+            r["simulator"] = "crash" if result.get("crashed") else ("ran" if result.get("ok") else "not_run")
+            r["sim_lines"] = lines
+            print(f"  {r['id']} {r['mode']}: {r['simulator']}", flush=True)
+        path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+
+
 def main() -> int:
+    if "--no-sim" not in sys.argv:
+        fill_missing_simulations()
     runs = load()
     if not runs:
         print("No results yet in", EVAL_DIR)

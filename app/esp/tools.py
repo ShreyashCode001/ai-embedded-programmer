@@ -205,7 +205,7 @@ def simulate(idf: Idf, seconds: int = 10) -> Iterator[Event]:
         return
     flash = build_dir / "qemu_flash.bin"
     merge = subprocess.run(
-        [str(idf.python), "-m", "esptool", "--chip", "esp32", "merge-bin", "--fill-flash-size", "4MB",
+        [str(idf.python), "-m", "esptool", "--chip", "esp32", "merge_bin", "--fill-flash-size", "4MB",
          "-o", str(flash), "@flash_args"],
         cwd=build_dir, env=idf.env, capture_output=True, text=True, timeout=120, creationflags=NO_WINDOW,
     )
