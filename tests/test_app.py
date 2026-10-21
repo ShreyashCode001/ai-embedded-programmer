@@ -401,7 +401,7 @@ def test_groq_does_not_wait_on_the_daily_limit():
         raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"retry-after": "60"}, body)
 
     waits = []
-    with pytest.raises(LLMError, match="per day"):
+    with pytest.raises(LLMError, match="daily limit"):
         list(GroqProvider(api_key="k", opener=opener, sleep=waits.append).stream([{"role": "user", "content": "x"}]))
     assert waits == []
 

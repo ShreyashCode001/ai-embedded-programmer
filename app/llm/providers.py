@@ -139,6 +139,9 @@ class GroqProvider:
                     yield ("status", f"Groq free-tier limit reached, waiting {wait:.0f} s…")
                     self.sleep(wait)
                     continue
+                if exc.code == 429 and daily:
+                    raise LLMError(f"Groq's free daily limit for {self.model} is used up. Pick another model in the "
+                                   "model menu (e.g. GPT-OSS 20B or the local model) or try again later.") from exc
                 if exc.code == 401:
                     raise LLMError("Groq rejected the API key. Check it in Settings.") from exc
                 if exc.code == 413 or "too large" in message.lower():
