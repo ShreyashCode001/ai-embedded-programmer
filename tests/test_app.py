@@ -388,3 +388,19 @@ def test_real_build_and_simulation(monkeypatch):
     assert result["ok"], result
     logs = [v for k, v in tools.simulate(idf, 4) if k == "log"]
     assert any("hello-test" in line for line in logs)
+
+
+def test_groq_does_not_wait_on_the_daily_limit():
+    import io
+    import urllib.error
+
+    from app.llm.providers import GroqProvider, LLMError
+
+    def opener(req, timeout):
+        body = io.BytesIO(b'{"error": {"message": "Rate limit reached on tokens per day (TPD)"}}')
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"retry-after": "60"}, body)
+
+    waits = []
+    with pytest.raises(LLMError, match="per day"):
+        list(GroqProvider(api_key="k", opener=opener, sleep=waits.append).stream([{"role": "user", "content": "x"}]))
+    assert waits == []

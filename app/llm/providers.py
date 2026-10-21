@@ -133,7 +133,8 @@ class GroqProvider:
                 response = self.opener(self._request(payload), self.timeout)
             except urllib.error.HTTPError as exc:
                 message = _read_error(exc)
-                if exc.code == 429 and attempt < MAX_RATE_LIMIT_RETRIES:
+                daily = "per day" in message.lower()
+                if exc.code == 429 and attempt < MAX_RATE_LIMIT_RETRIES and not daily:
                     wait = _retry_after(exc, default=8.0 * (attempt + 1))
                     yield ("status", f"Groq free-tier limit reached, waiting {wait:.0f} s…")
                     self.sleep(wait)
@@ -215,7 +216,8 @@ class OllamaProvider:
     # Upper limit for one reply. Without it a small model that starts repeating itself
     # keeps writing forever (Ollama then shifts the context and never stops).
     num_predict: int = 4096
-    timeout: float = 600.0
+    timeout: float = 180.0  # longest wait for the next piece of the reply
+    max_seconds: float = 480.0  # longest time for one whole reply (a stuck model is stopped)
     opener: Opener = _open
     name: str = "ollama"
 
@@ -262,8 +264,11 @@ class OllamaProvider:
             raise LLMError(f"Lost the connection to Ollama while it was answering ({exc}).") from exc
 
     def _read(self, response: Any) -> Iterator[Event]:
+        started = time.monotonic()
         with response:
             for raw in response:
+                if time.monotonic() - started > self.max_seconds:
+                    raise LLMError(f"The local model took too long (over {self.max_seconds / 60:.0f} minutes) and was stopped.")
                 line = raw.decode("utf-8", errors="replace").strip() if isinstance(raw, bytes) else str(raw).strip()
                 if not line:
                     continue
