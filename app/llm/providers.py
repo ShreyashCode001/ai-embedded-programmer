@@ -212,6 +212,9 @@ class OllamaProvider:
     host: str = "http://localhost:11434"
     temperature: float = 0.2
     num_ctx: int = 8192
+    # Upper limit for one reply. Without it a small model that starts repeating itself
+    # keeps writing forever (Ollama then shifts the context and never stops).
+    num_predict: int = 4096
     timeout: float = 600.0
     opener: Opener = _open
     name: str = "ollama"
@@ -237,7 +240,7 @@ class OllamaProvider:
             "model": self.model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx, "num_predict": self.num_predict},
         }
         request = urllib.request.Request(
             self.host.rstrip("/") + "/api/chat",
