@@ -157,8 +157,11 @@ def build_plain_messages(request: str, history: list[dict[str, Any]], current_co
     return messages
 
 
-def fix_request(errors: list[dict[str, Any]], unknown: list[str], deprecated: list[str], tail: str = "") -> str:
-    lines = ["The ESP-IDF v5.5 build of the CURRENT main.c failed."]
+def fix_request(errors: list[dict[str, Any]], unknown: list[str], deprecated: list[str], tail: str = "",
+                suggestions: dict[str, list[dict[str, str]]] | None = None, hardware: str = "",
+                build_failed: bool = True) -> str:
+    lines = ["The ESP-IDF v5.5 build of the CURRENT main.c failed." if build_failed
+             else "The CURRENT main.c builds, but it breaks the ESP32 hardware rules."]
     if errors:
         lines.append("Compiler errors:")
         lines += [f"- line {e['line']}: {e['message']}" for e in errors[:15]]
@@ -167,9 +170,19 @@ def fix_request(errors: list[dict[str, Any]], unknown: list[str], deprecated: li
     if unknown:
         lines.append("These called names do not exist in ESP-IDF v5.5 (checked against the real headers): "
                      + ", ".join(unknown) + ". Replace them with real ESP-IDF v5.5 functions.")
+    if suggestions:
+        lines.append("Real ESP-IDF v5.5 functions with similar names, exactly as declared in the headers "
+                     "(use these, with exactly these arguments):")
+        for name, options in suggestions.items():
+            lines.append(f"Instead of {name}:")
+            lines += [f"  {o['signature']}" + (f"   // #include \"{o['header']}\"" if o.get("header") else "")
+                      for o in options]
     if deprecated:
         lines.append("These are deprecated legacy APIs, use the v5 drivers instead: " + ", ".join(deprecated) + ".")
-    lines.append("Fix the code. Keep the same behaviour and pins. Reply with one short sentence and the complete corrected main.c.")
+    if hardware:
+        lines.append("Hardware problems found by the pin checker (these would fail or damage the real board):\n" + hardware)
+    lines.append("Fix the code. Keep the same behaviour and pins (unless a pin itself is the problem). "
+                 "Reply with one short sentence and the complete corrected main.c.")
     return "\n".join(lines)
 
 

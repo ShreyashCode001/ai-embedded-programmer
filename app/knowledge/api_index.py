@@ -176,3 +176,117 @@ def get_api_index(idf_path: Path, tools_path: Path | None, version: str) -> ApiI
             index.save(cache_file, idf_path)
         _cache[key] = index
         return index
+
+
+# ------------------------------------------------------- real-function lookup
+# When the model calls a function that does not exist, the most useful help is
+# the exact form of the REAL functions it probably meant. These are found by
+# name (same prefix, similar spelling) and read straight from the headers.
+
+_VERBS = frozenset("init deinit create new del delete start stop begin end setup get set read write "
+                   "config configure install uninstall enable disable add remove open close".split())
+
+
+# Words models use (often from Arduino) -> the word ESP-IDF uses for the same thing.
+_SYNONYMS = {"write": "set", "read": "get", "init": "new", "create": "new", "begin": "start", "level": "level",
+             "value": "level", "output": "level", "mode": "direction", "pin": "gpio", "digital": "gpio",
+             "analog": "adc", "pwm": "ledc", "duty": "duty", "freq": "freq", "frequency": "freq"}
+
+
+# Arduino functions models often slip in, and the ESP-IDF functions that do the same job.
+_ARDUINO = {
+    "digitalWrite": ["gpio_set_level"], "digitalRead": ["gpio_get_level"], "pinMode": ["gpio_set_direction", "gpio_config"],
+    "analogRead": ["adc_oneshot_read", "adc_oneshot_new_unit", "adc_oneshot_config_channel"],
+    "analogWrite": ["ledc_set_duty", "ledc_update_duty"], "delay": ["vTaskDelay"], "delayMicroseconds": ["esp_rom_delay_us"],
+    "millis": ["esp_timer_get_time"], "micros": ["esp_timer_get_time"], "attachInterrupt": ["gpio_isr_handler_add", "gpio_install_isr_service"],
+    "tone": ["ledc_set_freq", "ledc_set_duty"],
+}
+
+
+def _tokens(name: str) -> set[str]:
+    words = {t.lower() for t in re.split(r"_|(?<=[a-z])(?=[A-Z])", name) if len(t) > 1}
+    return words | {_SYNONYMS[w] for w in words if w in _SYNONYMS}
+
+
+def similar_names(name: str, index: ApiIndex, limit: int = 5) -> list[str]:
+    """Real, non-deprecated ESP-IDF names that look like ``name`` (best first).
+
+    Two ways to be a candidate: the same leading words (mcpwm_generator_set_*),
+    or all the same "content" words in any order (i2c_master_bus_init ->
+    i2c_new_master_bus). A candidate must share at least two words, so random
+    look-alikes (set_pixel -> set_errno) are not suggested."""
+    import difflib
+
+    if name in _ARDUINO:
+        return [n for n in _ARDUINO[name] if n in index.names][:limit]
+    words = _tokens(name)
+    content = words - _VERBS
+    parts = name.split("_")
+    pool: set[str] = set()
+    for k in range(len(parts) - 1, 0 if len(parts) == 2 else 1, -1):
+        prefix = "_".join(parts[:k]) + "_"
+        hits = [n for n, dep in index.names.items() if n.startswith(prefix) and not dep and n != name]
+        pool.update(hits)
+        if len(pool) >= 6:
+            break
+    if not pool:
+        pool.update(difflib.get_close_matches(name, [n for n, dep in index.names.items() if not dep], n=6, cutoff=0.8))
+    if len(content) >= 2:
+        pool.update(n for n, dep in index.names.items()
+                    if not dep and n != name and content <= _tokens(n) and len(n) < len(name) + 25)
+
+    def score(n: str) -> float:
+        shared = len(words & _tokens(n))
+        return difflib.SequenceMatcher(None, name.lower(), n.lower()).ratio() + 0.2 * shared
+
+    good = [n for n in pool if len(words & _tokens(n)) >= 2 and not n.startswith(("_", "hal_", "ll_", "trace"))
+            and "_ll_" not in n and "_hal_" not in n]
+    good.sort(key=score, reverse=True)
+    return good[:limit]
+
+
+_header_cache: dict[str, list[tuple[str, Path]]] = {}
+
+
+def declarations(idf_path: Path, names: list[str]) -> dict[str, dict[str, str]]:
+    """{name: {"signature": "...", "header": "driver/gptimer.h"}} for the given real names."""
+    wanted = set(names)
+    found: dict[str, dict[str, str]] = {}
+    if not wanted:
+        return found
+    key = str(idf_path)
+    if key not in _header_cache:
+        _header_cache[key] = _headers(Path(idf_path), None)
+    for rel, path in _header_cache[key]:
+        if len(found) == len(wanted):
+            break
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not any(n in text for n in wanted - found.keys()):
+            continue
+        text = _LINE_COMMENT.sub(" ", _BLOCK_COMMENT.sub(" ", text)).replace("\\\n", " ")
+        include = rel.split("/include/", 1)[-1]
+        for m in re.finditer(r"^\s*#\s*define\s+([A-Za-z_]\w*)\(([^)]*)\)", text, flags=re.MULTILINE):
+            if m.group(1) in wanted and m.group(1) not in found:
+                found[m.group(1)] = {"signature": f"{m.group(1)}({' '.join(m.group(2).split())})  /* macro */",
+                                     "header": include}
+        text = re.sub(r"^\s*#.*$", " ", text, flags=re.MULTILINE)
+        for raw in _SPLIT.split(text):
+            stmt = _ATTRS.sub(" ", " ".join(raw.split())).strip()
+            for prefix in ('extern "C"', "extern", "static", "inline", "__inline", "FORCE_INLINE_ATTR", "IRAM_ATTR"):
+                if stmt.startswith(prefix + " "):
+                    stmt = stmt[len(prefix) + 1:].lstrip()
+            m = _DECL.match(stmt)
+            if m and m.group(1) in wanted and m.group(1) not in found and len(stmt) < 400:
+                found[m.group(1)] = {"signature": stmt + ";", "header": include}
+    return found
+
+
+def suggestions(unknown: list[str], index: ApiIndex, idf_path: Path, per_name: int = 4) -> dict[str, list[dict[str, str]]]:
+    """For each made-up name: the real functions it probably meant, with their exact declarations."""
+    similar = {u: similar_names(u, index, per_name) for u in unknown[:6]}
+    decls = declarations(idf_path, [n for names in similar.values() for n in names])
+    return {u: [{"name": n, **decls.get(n, {"signature": n + "(...)", "header": ""})} for n in names]
+            for u, names in similar.items() if names}

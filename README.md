@@ -4,11 +4,17 @@
 BE project, ENTC group ET1, PES Modern College of Engineering, Pune (guide: Prof. R. S. Kamathe).
 
 Describe what the ESP32 should do in plain English. The AI writes complete
-ESP-IDF v5.5 C code, the app checks that every function really exists, builds
-it with the real ESP-IDF toolchain, fixes build errors with the AI, and lets
-you run it in a simulator or flash it to a board — all from one screen.
+ESP-IDF v5.5 C code, the app checks that every function really exists and that
+the pins are safe, builds it with the real ESP-IDF toolchain, fixes problems
+with the AI, and lets you run it in a simulator or flash it to a board — all
+from one calm, Claude-style screen.
 
-![screens: chat on the left, code editor on the right, build and serial output below](docs/screenshot.png)
+![the app: chat on the left, code panel with the pin map on the right](docs/screenshot.png)
+
+**What is new in v2.0** (see `docs/decisions.md`, D-47 to D-51)
+- New interface in the style of the Claude app: projects sidebar, home screen, work steps, code in a side panel, light/dark theme ([design notes](docs/UI_DESIGN.md)).
+- **Real-function lookup:** when the AI makes up a function, it is shown the real ESP-IDF functions with their exact declarations.
+- **Hardware pin check:** rule-based check of the ESP32 pin rules; errors are fixed automatically, and the **Pins tab** shows a drawing of the board.
 
 ## Features
 
@@ -20,7 +26,9 @@ you run it in a simulator or flash it to a board — all from one screen.
 | **See every change** | Red/green before-after view for each AI change, with one-click undo |
 | **Version history** | Every change (AI, auto-fix, your edits, restores) is a new version; nothing is overwritten |
 | **Real ESP-IDF examples** | For each request the closest official ESP-IDF examples are found and given to the AI |
-| **Made-up function check** | Every called function is checked against the real ESP-IDF headers |
+| **Made-up function check** | Every called function is checked against the real ESP-IDF headers; for a made-up one the real look-alikes are found with their exact declarations |
+| **Hardware pin check** | Flash pins, input-only pins, ADC2 + Wi-Fi, boot and console pins, motors without a driver… checked by fixed rules (no AI); errors are fixed automatically |
+| **Pins tab** | Drawing of the ESP32 DevKit with the pins the program uses |
 | **Build + auto-fix** | Real `idf.py build`; errors (explained in plain words) go back to the AI, up to 3 tries |
 | **Simulate** | Run the firmware in Espressif's ESP32 simulator (QEMU) without a board |
 | **Flash + serial monitor** | Flash the board and watch / send serial data live |
@@ -49,10 +57,11 @@ current code ─┘        │
              AI model (Groq GPT-OSS 120B  or  local Qwen2.5-Coder 7B), streamed
                        │
                        ▼
-             complete main.c ─► new version ─► made-up function check
+             complete main.c ─► new version ─► made-up function check (+ real look-alikes)
+                       │                       └► hardware pin check
                        │
                        ▼
-             real ESP-IDF build ──fail──► errors back to the AI (max 3) ──┐
+             real ESP-IDF build ──fail / pin error──► back to the AI (max 3) ──┐
                        │ ok                                                │
                        ▼                                                   │
              Simulate (QEMU)  /  Flash + Serial monitor  ◄─────────────────┘
@@ -63,10 +72,10 @@ current code ─┘        │
 | `app/main.py` | Web server (FastAPI): pages, API, live streams, serial WebSocket |
 | `app/assistant.py` | One chat turn end to end: prompt → model → version → check → build → auto-fix |
 | `app/llm/` | Groq and Ollama clients (streaming, rate limits), prompts and reply parsing |
-| `app/knowledge/` | Search over the installed ESP-IDF examples; real function-name index |
+| `app/knowledge/` | Search over the installed ESP-IDF examples; real function-name index and look-ups; hardware pin check |
 | `app/esp/` | Find ESP-IDF, build, simulate, flash, serial monitor |
 | `app/projects.py` | Projects, chat history, versions |
-| `web/` | The browser app (plain JavaScript + Monaco editor) |
+| `web/` | The browser app (plain JavaScript + Monaco editor), fonts, pin-map drawing |
 | `scripts/` | Setup, evaluation (20 test requests) |
 | `docs/` | User guide, decision log, evaluation results |
 

@@ -404,3 +404,56 @@ def test_groq_does_not_wait_on_the_daily_limit():
     with pytest.raises(LLMError, match="per day"):
         list(GroqProvider(api_key="k", opener=opener, sleep=waits.append).stream([{"role": "user", "content": "x"}]))
     assert waits == []
+
+
+# ------------------------------------------------------------ v2: hardware check
+LED_ON = """#include "driver/gpio.h"
+#define LED {pin}
+void app_main(void) {{
+    gpio_reset_pin(LED);
+    gpio_set_direction(LED, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED, 1);
+}}
+"""
+
+
+def test_hardware_check_finds_pin_problems():
+    from app.knowledge import hardware
+
+    ok = hardware.check(LED_ON.format(pin="GPIO_NUM_2"))
+    assert [p["pin"] for p in ok.pins] == [2] and ok.findings == []
+
+    rules = lambda code, req="": {(f.rule, f.level) for f in hardware.check(code, req).findings}
+    assert ("input_only", "error") in rules(LED_ON.format(pin="34"))
+    assert ("flash_pin", "error") in rules(LED_ON.format(pin="GPIO_NUM_6"))
+    assert ("no_such_pin", "error") in rules(LED_ON.format(pin="24"))
+    assert ("console_pin", "warning") in rules(LED_ON.format(pin="1"))
+
+    adc2_wifi = """#include "esp_wifi.h"
+#include "esp_adc/adc_oneshot.h"
+void app_main(void) {
+    esp_wifi_init(NULL); esp_wifi_start();
+    adc_oneshot_unit_init_cfg_t u = { .unit_id = ADC_UNIT_2 };
+    adc_oneshot_config_channel(h, ADC_CHANNEL_7, &cfg);
+}"""
+    assert ("adc2_wifi", "error") in rules(adc2_wifi)
+
+    button = """#include "driver/gpio.h"
+void app_main(void) {
+    gpio_config_t io = { .pin_bit_mask = (1ULL << 35), .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
+    gpio_config(&io);
+}"""
+    assert ("no_pull", "warning") in rules(button)
+    assert ("needs_driver", "warning") in rules(LED_ON.format(pin="13"), "Drive a 12 V DC motor from GPIO 13")
+    assert ("needs_driver", "warning") not in rules(LED_ON.format(pin="13") + "// L298N driver", "Drive a 12 V motor")
+
+
+def test_fix_request_carries_real_functions_and_pin_problems():
+    from app.llm.prompts import fix_request
+
+    text = fix_request([], ["gpio_write"], [], suggestions={"gpio_write": [
+        {"name": "gpio_set_level", "signature": "esp_err_t gpio_set_level(gpio_num_t gpio_num, uint32_t level);", "header": "driver/gpio.h"}]},
+        hardware="- line 5: GPIO 34 is input-only", build_failed=True)
+    assert "gpio_set_level(gpio_num_t gpio_num, uint32_t level)" in text and "driver/gpio.h" in text
+    assert "GPIO 34 is input-only" in text
+    assert fix_request([], [], [], hardware="x", build_failed=False).startswith("The CURRENT main.c builds")

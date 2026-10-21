@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 APP_NAME = "AI-Driven Embedded Programmer"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("ADEP_DATA_DIR", ROOT / "data"))
@@ -47,6 +47,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "auto_build": True,                    # build after every AI change
     "auto_fix": True,                      # send build errors back to the AI
     "max_fix_attempts": 3,
+    "hardware_fix": True,                  # also auto-fix pin-rule errors found by the hardware check
+    "function_hints": True,                # give the AI the real declarations of functions it made up
     "examples_in_prompt": 2,               # ESP-IDF examples given to the AI
     "serial_baud": 115200,
     "flash_baud": 460800,

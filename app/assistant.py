@@ -20,7 +20,8 @@ from typing import Any, Iterator
 
 from app.esp import tools
 from app.esp.idf import Idf, IdfNotFound, get_idf
-from app.knowledge.api_index import check_code, get_api_index
+from app.knowledge import hardware
+from app.knowledge.api_index import check_code, get_api_index, suggestions
 from app.knowledge.examples import get_index
 from app.llm.prompts import (EXPLAIN_PROMPT, SYSTEM_PROMPT, build_messages, build_plain_messages,
                               extract_code, fix_request)
@@ -44,6 +45,7 @@ class Assistant:
         self.provider = provider or make_provider(settings)
         self._idf = idf
         self._idf_error = ""
+        self._request = ""
 
     # ------------------------------------------------------------ helpers
     def idf(self) -> Idf | None:
@@ -76,6 +78,25 @@ class Assistant:
             return get_api_index(idf.path, idf.tools_path, idf.version)
         except Exception:
             return None
+
+    def _suggest(self, unknown: list[str]) -> dict[str, list[dict[str, str]]]:
+        idf, api = self.idf(), self._api()
+        if not unknown or idf is None or api is None or not self.settings.get("function_hints", True):
+            return {}
+        try:
+            return suggestions(unknown, api, idf.path)
+        except Exception:
+            return {}
+
+    def check(self, code: str, request: str = "", reply: str = "") -> dict[str, Any]:
+        """Everything the app can tell about a main.c without building it."""
+        api = self._api()
+        api_check = check_code(code, api) if (api and code.strip()) else None
+        return {
+            "api_check": api_check.as_dict() if api_check else None,
+            "suggestions": self._suggest(api_check.unknown) if api_check else {},
+            "hardware": hardware.check(code, request, reply).as_dict(),
+        }
 
     def _stream_reply(self, messages_for: Any, kind: str) -> Iterator[Event]:
         """Call the model; on 'too large', retry with less context. Yields events; last is ('reply', text)."""
@@ -118,6 +139,7 @@ class Assistant:
             entry = project.add_version(editor_code, "user", "Your manual edits")
             if entry:
                 yield {"type": "version", "version": entry, "code": editor_code}
+        self._request = request
         user_msg = project.add_message("user", request)
         yield {"type": "user_saved", "message": user_msg}
 
@@ -159,14 +181,13 @@ class Assistant:
             return
         previous = project.code()
         entry = project.add_version(code, "ai" if kind == "chat" else "fix", _first_sentence(reply))
-        api = self._api()
-        check = check_code(code, api).as_dict() if api else None
         if entry is None:
             yield {"type": "status", "text": "The AI returned the same code as before."}
             return
         project.update_message(msg["id"], version=entry["n"])
+        info = self.check(code, self._request, reply)
         yield {"type": "version", "version": entry, "code": code, "previous": previous, "message_id": msg["id"],
-               "api_check": check}
+               "api_check": info["api_check"], "suggestions": info["suggestions"], "hardware": info["hardware"]}
         if kind == "chat" and self.settings.get("auto_build", True):
             yield from self.build_and_fix(project, auto_fix=bool(self.settings.get("auto_fix", True)))
 
@@ -196,18 +217,26 @@ class Assistant:
                 return
             project.set_build_status(n, bool(result.get("ok")))
             yield {"type": "build_result", "version": n, **result}
-            if result.get("ok") or attempt >= max_attempts:
+            hw_errors = []
+            if result.get("ok") and self.settings.get("hardware_fix", True):
+                hw_errors = hardware.check(code, self._request).errors
+            if (result.get("ok") and not hw_errors) or attempt >= max_attempts:
                 if not result.get("ok") and max_attempts:
                     yield {"type": "status", "text": f"Still failing after {attempt} automatic fix(es). Try describing the problem in the chat, or edit the code."}
+                elif hw_errors and max_attempts:
+                    yield {"type": "status", "text": "It builds, but the hardware check still finds a pin problem. See the Pins tab."}
                 return
             attempt += 1
             api = self._api()
             check = check_code(code, api) if api else None
-            request = fix_request(result.get("errors", []), check.unknown if check else [],
-                                  check.deprecated if check else [], result.get("tail", ""))
-            count = len(result.get("errors", []))
+            unknown = check.unknown if check else []
+            request = fix_request(result.get("errors", []), unknown, check.deprecated if check else [],
+                                  result.get("tail", ""), suggestions=self._suggest(unknown),
+                                  hardware=hardware.fix_text(hw_errors), build_failed=not result.get("ok"))
+            count = len(result.get("errors", [])) + len(hw_errors)
             project.add_message("user", request, kind="fix", attempt=attempt)
-            yield {"type": "fix_start", "attempt": attempt, "max": max_attempts, "errors": count}
+            yield {"type": "fix_start", "attempt": attempt, "max": max_attempts, "errors": count,
+                   "reason": "hardware" if result.get("ok") else "build"}
             board = project.meta().get("board")
             history = [m for m in project.chat()[:-1] if m.get("kind") == "chat"]
 

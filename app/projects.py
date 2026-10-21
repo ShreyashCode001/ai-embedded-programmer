@@ -33,7 +33,7 @@ _lock = threading.RLock()
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _read(path: Path, default: Any) -> Any:
@@ -187,8 +187,10 @@ class Project:
     # --------------------------------------------------------------- summary
     def summary(self) -> dict[str, Any]:
         meta = self.meta()
+        versions = self.versions()
         return {"id": self.id, "name": meta.get("name"), "created": meta.get("created"),
-                "updated": meta.get("updated"), "versions": self.current_version()}
+                "updated": meta.get("updated"), "versions": self.current_version(),
+                "build": versions[-1].get("build") if versions else None}
 
     def full(self) -> dict[str, Any]:
         return {**self.summary(), "board": self.meta().get("board", DEFAULT_BOARD),

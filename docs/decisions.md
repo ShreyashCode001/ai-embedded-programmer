@@ -187,9 +187,69 @@ The local folder keeps the name `AI-Driven-Embedded-Programmer`.
 
 ---
 
+## Version 2 decisions (21–22 Oct 2026)
+
+### D-47 · v2 looks and behaves like the Claude chat app
+**Status:** Decided (team request, 21 Oct)
+**What:** sidebar with projects, a home screen with one big message box, a calm
+centred chat with the AI's reply as plain serif text, work steps that fold into
+one line, and the code in a side panel opened from a small `main.c` card (like
+Claude's artifacts). Light and dark theme. Details: `docs/UI_DESIGN.md`.
+**Why:** the team wanted a smooth, premium experience for the demo and for
+users who already know Claude. The design tokens (colours, radii, motion) were
+read from claude.ai's own stylesheet on 21 Oct.
+**Limits:** we copy the style, not the brand: no Claude name/logo, and free
+fonts (Inter, Source Serif 4, JetBrains Mono; SIL OFL, bundled in `web/fonts/`)
+instead of Anthropic's paid fonts. The app works offline.
+**Replaces:** the v1 split-screen layout (D-39 still holds for the technology).
+
+### D-48 · Real-function lookup ("did you mean")
+**Status:** Decided
+**What:** when the AI calls a function that does not exist, the app finds the
+real ESP-IDF functions it probably meant (same leading words, or the same words
+in another order, e.g. `i2c_master_bus_init` → `i2c_new_master_bus`; plus a small
+Arduino → ESP-IDF table) and reads their **exact declarations** from the
+installed headers. These go into the auto-fix prompt and are shown to the user.
+**Why:** the 21 Oct evaluation showed that most failures that auto-fix could not
+repair were made-up names for newer drivers (MCPWM servo, touch, I2C, LCD): the
+model was told the name was wrong, but not what the right one looks like.
+**How measured:** re-run the evaluation with v2 (`function_hints` on/off).
+
+### D-49 · Hardware (pin) check with plain rules, no AI
+**Status:** Decided — first part of the planned feasibility checker (D-45)
+**What:** `app/knowledge/hardware.py` reads `main.c`, finds which GPIO pins are
+used and for what, and checks the ESP32 DevKit rules: flash pins 6–11, output on
+input-only 34–39, pull resistors on 34–39, ADC2 with Wi-Fi, pins that do not
+exist, console pins 1/3, boot pin 12, GPIO 37/38 not on the header, one pin for
+two jobs, and a motor/pump/12 V load without a driver. Errors are sent to the AI
+for an automatic fix (setting `hardware_fix`), warnings are shown.
+**Why:** in the evaluation the safety test only checked whether the reply
+*mentioned* a driver. Running this check on all 137 evaluation results showed
+that several "warned" replies still set GPIO 34 as an output. A code check
+catches that; a keyword check does not.
+**Limits:** a text scan, not a C compiler; it reports only what it can see for
+certain and cannot see the real wiring.
+
+### D-50 · Pins tab with a drawing of the board
+**Status:** Decided
+**What:** the code panel has a Pins tab: an ESP32 DevKitC (38-pin) drawing with
+the used pins highlighted (red error, amber warning), the list of problems with
+the fix, and a table of pins → job → code line.
+**Why:** students wire the board from this; it also makes the hardware check
+visible in the demo.
+
+### D-51 · v1 kept on its own branch
+**Status:** Decided
+The exact code used for the first full evaluation is kept on the GitHub branch
+`v1` (tags could not be pushed from the build machine). v2 continues on `main`.
+Evaluation results are always reported with the version they came from.
+
+---
+
 ## Open questions
 - [x] Push the code to GitHub (D-46)
-- [ ] Run the 20-request evaluation with GPT-OSS 120B and with local Qwen (needs the Groq key) → `docs/EVALUATION.md`
+- [x] Run the 20-request evaluation with GPT-OSS 120B and with local Qwen → `docs/EVALUATION.md` (v1, 21 Oct; Groq ablations still to finish)
+- [ ] Re-run the evaluation with v2 (function lookup + hardware check)
 - [ ] Buy an ESP32 DevKit + basic parts to test Flash / Monitor on real hardware
 - [ ] Who has a Claude plan for Claude Code (D-07 from the first plan)
 - [ ] Team members review the code and the prompts

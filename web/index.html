@@ -1,211 +1,372 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI-Driven Embedded Programmer</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='4' fill='%230f1115' stroke='%2333d6c0' stroke-width='2'/%3E%3Cpath d='M18 7l-7 10h5l-2 8 7-10h-5z' fill='%2333d6c0'/%3E%3C/svg%3E">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='8' fill='%23D97757'/%3E%3Crect x='9' y='9' width='14' height='14' rx='3' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M17 11.5l-3.5 5h3l-1 4 3.5-5h-3z' fill='white'/%3E%3C/svg%3E">
+<script>
+  // Apply the saved theme before the page paints (no flash of the wrong theme).
+  (function () {
+    var t = "system";
+    try { t = localStorage.getItem("adep.theme") || "system"; } catch (e) { /* storage blocked */ }
+    var dark = t === "dark" || (t === "system" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="4" width="24" height="24" rx="5"/><path d="M18 7l-7 10h5l-2 8 7-10h-5z"/></svg>
-    <span>AI-Driven Embedded Programmer</span>
-  </div>
-  <div class="project-picker">
-    <select id="projectSelect" title="Your projects"></select>
-    <button id="newProjectBtn" class="btn ghost" title="New project">＋ New</button>
-    <button id="projectMenuBtn" class="btn ghost icon" title="Rename or delete project">⋯</button>
-    <div id="projectMenu" class="menu hidden">
-      <button data-act="rename">Rename</button>
-      <button data-act="board">Board &amp; wiring…</button>
-      <button data-act="export">Download as .zip</button>
-      <button data-act="vscode">Open in VS Code</button>
-      <button data-act="folder">Open folder</button>
-      <button data-act="clear">Clear chat (keep code)</button>
-      <button data-act="delete" class="danger">Delete project</button>
-    </div>
-  </div>
-  <div class="spacer"></div>
-  <div class="model-picker">
-    <label for="modelSelect">Model</label>
-    <select id="modelSelect"></select>
-  </div>
-  <span id="idfPill" class="pill" title="ESP-IDF status">ESP-IDF…</span>
-  <button id="boardBtn" class="btn ghost">Board</button>
-  <button id="settingsBtn" class="btn ghost">Settings</button>
-</header>
+<!-- ============================================================ ICONS -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4.5M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-hammer" viewBox="0 0 24 24"><path d="m14.5 12.5-8.6 8.6a2 2 0 0 1-2.8-2.8l8.6-8.6"/><path d="M17.6 15.6 22 11.2l-3-3-1-1V4l-1.5-1.5a5 5 0 0 0-7 0L9 3h4l1.5 1.5v2.8L13 8.8l4.6 4.6"/></symbol>
+    <symbol id="i-wand" viewBox="0 0 24 24"><path d="m15 4-1 2-2 1 2 1 1 2 1-2 2-1-2-1ZM5 7l-.5 1L3.5 8.5l1 .5L5 10l.5-1 1-.5-1-.5ZM19 14l-.5 1-1 .5 1 .5.5 1 .5-1 1-.5-1-.5Z"/><path d="m3 21 10-10"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7Z"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M12 17h7"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></symbol>
+    <symbol id="i-diff" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V15a3 3 0 0 0 3 3h6.5M18 15.5V9a3 3 0 0 0-3-3H8.5"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2Zm0 0A2 2 0 0 0 6 21.5h13"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9.5 13.5 8 15l1.5 1.5M14.5 13.5 16 15l-1.5 1.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6M18.5 6l-.8 13a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-board" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M3.5 6h2.5M3.5 9.5h2.5M3.5 13h2.5M3.5 16.5h2.5M18 6h2.5M18 9.5h2.5M18 13h2.5M18 16.5h2.5"/><rect x="9" y="5" width="6" height="5" rx="1"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6c.7.6 1 1.3 1 2.1V17h6v-.8c0-.8.4-1.5 1-2.1a6.5 6.5 0 0 0-4-11.6Z"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 7 19Z"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M13.2 7.2 9.6 12.6h3l-.9 4.2 3.7-5.5h-3Z" fill="currentColor" stroke="none"/><path d="M9 2.5v2.5M15 2.5v2.5M9 19v2.5M15 19v2.5M2.5 9H5M2.5 15H5M19 9h2.5M19 15h2.5" stroke-width="1.9"/></symbol>
+  </defs>
+</svg>
 
-<main class="layout">
-  <!-- ======================= CHAT ======================= -->
-  <section class="chat" aria-label="Chat">
-    <div id="messages" class="messages"></div>
-    <div id="emptyChat" class="empty-chat hidden">
-      <h2>What should your ESP32 do?</h2>
-      <p>Describe it in plain English. Then keep chatting to change it.</p>
-      <div class="chips" id="exampleChips"></div>
-    </div>
-    <form id="chatForm" class="composer">
-      <textarea id="chatInput" rows="3" placeholder="e.g. Read a DHT22 on GPIO 4 every 2 seconds and print temperature and humidity"></textarea>
-      <div class="composer-row">
-        <span class="hint">Enter to send · Shift+Enter for a new line</span>
-        <button type="button" id="stopBtn" class="btn hidden">■ Stop</button>
-        <button type="submit" id="sendBtn" class="btn primary">Send</button>
+<div class="app" id="app">
+  <!-- ========================================================= SIDEBAR -->
+  <aside class="sidebar" id="sidebar" aria-label="Projects">
+    <div class="sb-head">
+      <div class="brand" title="AI-Driven Embedded Programmer">
+        <span class="brand-mark"><svg class="i"><use href="#i-mark"/></svg></span>
+        <span class="brand-name">Embedded Programmer</span>
       </div>
-    </form>
-  </section>
-
-  <div class="splitter" id="splitter" title="Drag to resize"></div>
-
-  <!-- ======================= CODE ======================= -->
-  <section class="code" aria-label="Code">
-    <div class="code-toolbar">
-      <span class="file">main.c</span>
-      <span id="versionLabel" class="badge">no code yet</span>
-      <span id="dirtyBadge" class="badge warn hidden" title="You edited the code. It is saved as a version when you build, chat, or press Ctrl+S.">edited</span>
-      <span id="apiBadge" class="badge hidden"></span>
-      <div class="spacer"></div>
-      <select id="versionSelect" title="Version history"></select>
-      <button id="diffBtn" class="btn ghost" title="Show what the last change did">Changes</button>
-      <button id="undoBtn" class="btn ghost" title="Go back to the previous version">Undo</button>
-      <button id="saveBtn" class="btn ghost" title="Save your edits as a new version (Ctrl+S)">Save</button>
-      <button id="explainBtn" class="btn ghost" title="Explain this code in simple words">Explain</button>
-      <button id="copyBtn" class="btn ghost" title="Copy code">Copy</button>
+      <button class="icon-btn" id="sidebarClose" data-tip="Close sidebar" aria-label="Close sidebar"><svg class="i"><use href="#i-sidebar"/></svg></button>
     </div>
-    <div id="diffBar" class="diff-bar hidden">
-      <span id="diffLabel">Changes</span>
-      <div class="spacer"></div>
-      <button id="diffUndoBtn" class="btn ghost">Undo this change</button>
-      <button id="diffCloseBtn" class="btn">Back to editor</button>
+
+    <button class="new-project" id="newProjectBtn">
+      <span class="plus"><svg class="i"><use href="#i-plus"/></svg></span>
+      <span>New project</span>
+      <kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="sb-search">
+      <svg class="i"><use href="#i-search"/></svg>
+      <input id="projectSearch" placeholder="Search projects" autocomplete="off">
     </div>
-    <div class="editor-wrap">
-      <div id="editor" class="editor"></div>
-      <div id="diffEditor" class="editor hidden"></div>
-      <div id="editorLoading" class="editor-loading">Loading editor…</div>
-      <div id="editorEmpty" class="editor-empty hidden">
-        <div>Your ESP32 code will appear here.</div>
-        <div class="dim">Describe what you want in the chat, or start typing C code yourself.</div>
+
+    <div class="sb-scroll" id="sbScroll">
+      <div class="sb-label">Projects</div>
+      <ul class="project-list" id="projectList"></ul>
+      <details class="sb-group" id="evalGroup">
+        <summary><svg class="i chev"><use href="#i-chev-right"/></svg> Evaluation runs <span id="evalCount" class="count"></span></summary>
+        <ul class="project-list" id="evalList"></ul>
+      </details>
+    </div>
+
+    <div class="sb-foot">
+      <div class="env" id="envStatus">
+        <span class="dot"></span>
+        <span class="env-text">Checking ESP-IDF…</span>
+      </div>
+      <div class="sb-foot-row">
+        <button class="foot-btn" id="settingsBtn"><svg class="i"><use href="#i-settings"/></svg><span>Settings</span></button>
+        <button class="icon-btn" id="themeBtn" data-tip="Theme" aria-label="Change theme"><svg class="i"><use href="#i-sun"/></svg></button>
       </div>
     </div>
+  </aside>
 
-    <div class="actions">
-      <button id="buildBtn" class="btn primary" title="Compile with ESP-IDF">⚙ Build</button>
-      <button id="fixBtn" class="btn" title="Send the build errors to the AI and rebuild">✦ Fix with AI</button>
-      <button id="simBtn" class="btn" title="Run in the ESP32 simulator (QEMU)">▶ Simulate</button>
-      <div class="sep"></div>
-      <select id="portSelect" title="Board serial port"></select>
-      <button id="portRefresh" class="btn ghost icon" title="Refresh ports">↻</button>
-      <button id="flashBtn" class="btn" title="Build and flash to the board">⚡ Flash</button>
-      <button id="monitorBtn" class="btn" title="Show the board's serial output">⌁ Monitor</button>
-      <div class="spacer"></div>
-      <span id="jobStatus" class="job-status"></span>
-    </div>
-
-    <div class="panel">
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-tab="output">Output</button>
-        <button class="tab" data-tab="problems">Problems <span id="problemCount" class="count hidden">0</span></button>
-        <button class="tab" data-tab="serial">Serial</button>
-        <div class="spacer"></div>
-        <button id="clearPanel" class="btn ghost small">Clear</button>
+  <!-- ============================================================ MAIN -->
+  <main class="main" id="main">
+    <header class="topbar">
+      <button class="icon-btn" id="sidebarOpen" data-tip="Open sidebar" aria-label="Open sidebar"><svg class="i"><use href="#i-sidebar"/></svg></button>
+      <div class="title-wrap">
+        <button class="project-title" id="projectTitle" aria-haspopup="menu">
+          <span id="projectName">Project</span>
+          <svg class="i small"><use href="#i-chev-down"/></svg>
+        </button>
+        <div class="menu" id="projectMenu" role="menu" hidden>
+          <button data-act="rename"><svg class="i"><use href="#i-pencil"/></svg>Rename</button>
+          <button data-act="board"><svg class="i"><use href="#i-board"/></svg>Board &amp; wiring…</button>
+          <button data-act="explain"><svg class="i"><use href="#i-bulb"/></svg>Explain the code</button>
+          <div class="menu-sep"></div>
+          <button data-act="export"><svg class="i"><use href="#i-download"/></svg>Download project (.zip)</button>
+          <button data-act="vscode"><svg class="i"><use href="#i-external"/></svg>Open in VS Code</button>
+          <button data-act="folder"><svg class="i"><use href="#i-folder"/></svg>Open folder</button>
+          <div class="menu-sep"></div>
+          <button data-act="clear"><svg class="i"><use href="#i-history"/></svg>Clear chat (keep code)</button>
+          <button data-act="delete" class="danger"><svg class="i"><use href="#i-trash"/></svg>Delete project</button>
+        </div>
       </div>
-      <pre id="outputPane" class="pane"></pre>
-      <div id="problemsPane" class="pane hidden"></div>
-      <div id="serialPane" class="pane serial hidden">
-        <pre id="serialLog"></pre>
-        <form id="serialForm" class="serial-input">
-          <input id="serialInput" placeholder="Send text to the board (needs Monitor)" autocomplete="off">
-          <button class="btn small" type="submit">Send</button>
-          <button class="btn small ghost" type="button" id="resetBoardBtn">Reset board</button>
+      <div class="spacer"></div>
+      <button class="chip-btn" id="boardBtn" data-tip="Tell the AI what is connected"><svg class="i"><use href="#i-board"/></svg><span id="boardLabel">Board</span></button>
+      <button class="chip-btn" id="panelToggle" data-tip="Code panel (Ctrl+\)"><svg class="i"><use href="#i-code"/></svg><span>Code</span><span class="ver-pill hidden" id="topVersion"></span></button>
+    </header>
+
+    <section class="conversation" id="conversation">
+      <!-- Home (empty project) -->
+      <div class="home" id="home" hidden>
+        <div class="home-inner">
+          <h1 class="greeting"><span class="greet-mark"><svg class="i"><use href="#i-mark"/></svg></span><span id="greetText">Good evening</span></h1>
+          <p class="home-sub">Describe what your ESP32 should do. I'll write the ESP-IDF code, build it, fix it and check the pins.</p>
+          <div class="home-composer-slot" id="homeComposerSlot"></div>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="scroll-pad"></div>
+    </section>
+
+    <div class="composer-dock" id="composerDock">
+      <button class="to-bottom" id="toBottom" aria-label="Scroll to the latest message" hidden><svg class="i"><use href="#i-arrow-up"/></svg></button>
+      <form class="composer" id="composer">
+        <textarea id="chatInput" rows="1" placeholder="Describe what the ESP32 should do…" aria-label="Message"></textarea>
+        <div class="composer-row">
+          <button type="button" class="icon-btn" id="composerBoard" data-tip="Board &amp; wiring"><svg class="i"><use href="#i-plus"/></svg></button>
+          <span class="composer-hint" id="composerHint"></span>
+          <div class="spacer"></div>
+          <div class="model-wrap">
+            <button type="button" class="model-btn" id="modelBtn" aria-haspopup="menu"><span id="modelName">Model</span><svg class="i small"><use href="#i-chev-down"/></svg></button>
+            <div class="menu model-menu" id="modelMenu" role="menu" hidden></div>
+          </div>
+          <button type="submit" class="send-btn" id="sendBtn" aria-label="Send" disabled><svg class="i"><use href="#i-arrow-up"/></svg></button>
+          <button type="button" class="send-btn stop" id="stopBtn" aria-label="Stop" hidden><svg class="i"><use href="#i-stop"/></svg></button>
+        </div>
+      </form>
+      <div class="disclaimer">AI can make mistakes. Check the wiring before you power the board.</div>
+    </div>
+  </main>
+
+  <div class="splitter" id="splitter" aria-hidden="true"></div>
+
+  <!-- ====================================================== CODE PANEL -->
+  <section class="panel" id="panel" aria-label="Code">
+    <header class="panel-head">
+      <div class="file-chip">
+        <span class="file-icon"><svg class="i"><use href="#i-file"/></svg></span>
+        <div class="file-meta">
+          <div class="file-name">main.c <span class="dirty hidden" id="dirtyBadge" data-tip="Edited by you – saved as a version when you build, chat, or press Ctrl+S">• edited</span></div>
+          <button class="ver-btn" id="versionBtn" aria-haspopup="menu"><span id="versionLabel">No code yet</span><svg class="i small"><use href="#i-chev-down"/></svg></button>
+          <div class="menu version-menu" id="versionMenu" role="menu" hidden></div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="seg" role="tablist" id="panelTabs">
+        <button class="seg-btn active" data-tab="code"><svg class="i"><use href="#i-code"/></svg><span>Code</span></button>
+        <button class="seg-btn" data-tab="diff"><svg class="i"><use href="#i-diff"/></svg><span>Changes</span></button>
+        <button class="seg-btn" data-tab="pins"><svg class="i"><use href="#i-cpu"/></svg><span>Pins</span><span class="badge-dot hidden" id="pinsDot"></span></button>
+        <button class="seg-btn" data-tab="output"><svg class="i"><use href="#i-terminal"/></svg><span>Output</span><span class="count-pill hidden" id="problemCount"></span></button>
+        <button class="seg-btn" data-tab="serial"><svg class="i"><use href="#i-monitor"/></svg><span>Serial</span></button>
+      </div>
+      <div class="panel-tools">
+        <button class="icon-btn" id="copyBtn" data-tip="Copy code"><svg class="i"><use href="#i-copy"/></svg></button>
+        <button class="icon-btn" id="downloadBtn" data-tip="Download main.c"><svg class="i"><use href="#i-download"/></svg></button>
+        <button class="icon-btn" id="panelClose" data-tip="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+    </header>
+
+    <div class="panel-body">
+      <!-- Code -->
+      <div class="view" data-view="code">
+        <div class="editor-bar" id="editorBar">
+          <span class="api-note" id="apiNote"></span>
+          <div class="spacer"></div>
+          <button class="text-btn" id="undoBtn" data-tip="Go back to the previous version"><svg class="i"><use href="#i-undo"/></svg>Undo</button>
+          <button class="text-btn" id="saveBtn" data-tip="Save your edits as a version (Ctrl+S)"><svg class="i"><use href="#i-save"/></svg>Save</button>
+          <button class="text-btn" id="explainBtn" data-tip="Explain this code in simple words"><svg class="i"><use href="#i-bulb"/></svg>Explain</button>
+        </div>
+        <div class="editor-wrap">
+          <div id="editor" class="editor"></div>
+          <div class="editor-empty" id="editorEmpty">
+            <div class="empty-icon"><svg class="i"><use href="#i-file"/></svg></div>
+            <div class="empty-title">Your ESP32 code will appear here</div>
+            <div class="empty-sub">Ask for something in the chat, or start typing C code.</div>
+          </div>
+          <div class="editor-loading" id="editorLoading"><span class="spinner"></span>Loading editor…</div>
+          <div class="streaming-tag hidden" id="streamingTag"><span class="pulse"></span>Writing main.c…</div>
+        </div>
+      </div>
+      <!-- Changes -->
+      <div class="view" data-view="diff" hidden>
+        <div class="editor-bar">
+          <span class="diff-label" id="diffLabel">No changes yet</span>
+          <div class="spacer"></div>
+          <button class="text-btn" id="diffRestoreBtn" hidden><svg class="i"><use href="#i-history"/></svg><span>Restore</span></button>
+        </div>
+        <div class="editor-wrap"><div id="diffEditor" class="editor"></div>
+          <div class="editor-empty" id="diffEmpty"><div class="empty-icon"><svg class="i"><use href="#i-diff"/></svg></div><div class="empty-title">No changes to show yet</div><div class="empty-sub">After the AI changes the code, you can see exactly what changed here.</div></div>
+        </div>
+      </div>
+      <!-- Pins -->
+      <div class="view pins-view" data-view="pins" hidden>
+        <div class="pins-layout">
+          <div class="board-wrap" id="boardWrap"></div>
+          <div class="pins-side">
+            <div class="pins-summary" id="pinsSummary"></div>
+            <div class="findings" id="findings"></div>
+            <div class="pin-table" id="pinTable"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Output -->
+      <div class="view" data-view="output" hidden>
+        <div class="problems" id="problems"></div>
+        <pre class="log" id="outputLog"></pre>
+      </div>
+      <!-- Serial -->
+      <div class="view" data-view="serial" hidden>
+        <pre class="log serial" id="serialLog"></pre>
+        <form class="serial-input" id="serialForm">
+          <input id="serialInput" placeholder="Send text to the board (start the Monitor first)" autocomplete="off">
+          <button class="text-btn" type="submit">Send</button>
+          <button class="text-btn" type="button" id="resetBoardBtn">Reset board</button>
+          <button class="text-btn" type="button" id="clearLogBtn">Clear</button>
         </form>
       </div>
     </div>
-  </section>
-</main>
 
-<!-- ======================= DIALOGS ======================= -->
+    <footer class="actionbar">
+      <button class="act primary" id="buildBtn" data-tip="Compile with ESP-IDF (Ctrl+B)"><svg class="i"><use href="#i-hammer"/></svg><span>Build</span></button>
+      <button class="act" id="fixBtn" data-tip="Build, then let the AI fix any errors"><svg class="i"><use href="#i-wand"/></svg><span>Fix with AI</span></button>
+      <button class="act" id="simBtn" data-tip="Run in the ESP32 simulator (QEMU)"><svg class="i"><use href="#i-play"/></svg><span>Simulate</span></button>
+      <div class="act-sep"></div>
+      <div class="port-wrap">
+        <select id="portSelect" aria-label="Board port"></select>
+        <button class="icon-btn" id="portRefresh" data-tip="Look for boards again"><svg class="i"><use href="#i-refresh"/></svg></button>
+      </div>
+      <button class="act" id="flashBtn" data-tip="Build and flash to the board"><svg class="i"><use href="#i-zap"/></svg><span>Flash</span></button>
+      <button class="act" id="monitorBtn" data-tip="Show the board's serial output"><svg class="i"><use href="#i-terminal"/></svg><span id="monitorLabel">Monitor</span></button>
+      <div class="spacer"></div>
+      <span class="job" id="jobStatus"></span>
+    </footer>
+  </section>
+</div>
+
+<!-- ============================================================ DIALOGS -->
 <dialog id="settingsDialog" class="dialog">
   <form method="dialog" id="settingsForm">
-    <h2>Settings</h2>
-    <fieldset>
-      <legend>AI model</legend>
-      <label class="row"><span>Use</span>
-        <select name="provider">
-          <option value="groq">Groq cloud (best quality, needs internet)</option>
-          <option value="ollama">Local model on this laptop (Ollama, offline)</option>
-        </select></label>
-      <label class="row"><span>Groq API key</span><input name="groq_api_key" type="password" autocomplete="off" placeholder="Paste your free key from console.groq.com/keys"></label>
-      <label class="row"><span>Groq model</span><select name="groq_model"></select></label>
-      <label class="row"><span>Local model</span><input name="ollama_model" placeholder="qwen2.5-coder:7b"></label>
-      <label class="row"><span>Ollama address</span><input name="ollama_host"></label>
-      <label class="row"><span>Creativity</span><input name="temperature" type="number" min="0" max="1" step="0.1"></label>
-      <div class="row"><span></span><button type="button" id="testModelBtn" class="btn">Test connection</button></div>
-      <p id="testResult" class="note"></p>
-    </fieldset>
-    <fieldset>
-      <legend>Automation</legend>
-      <label class="check"><input type="checkbox" name="auto_build"> Build automatically after every AI change</label>
-      <label class="check"><input type="checkbox" name="auto_fix"> Fix build errors automatically with the AI</label>
-      <label class="row"><span>Max auto-fix tries</span><input name="max_fix_attempts" type="number" min="0" max="5"></label>
-      <label class="row"><span>ESP-IDF examples given to the AI</span><input name="examples_in_prompt" type="number" min="0" max="3"></label>
-    </fieldset>
-    <fieldset>
-      <legend>Board &amp; tools</legend>
-      <label class="row"><span>Serial monitor baud</span><input name="serial_baud" type="number"></label>
-      <label class="row"><span>Flash baud</span><input name="flash_baud" type="number"></label>
-      <label class="row"><span>Simulator run time (s)</span><input name="sim_seconds" type="number" min="3" max="60"></label>
-      <details>
-        <summary>ESP-IDF location (only if it is not found automatically)</summary>
-        <label class="row"><span>ESP-IDF folder</span><input name="idf_path" placeholder="C:\Espressif\frameworks\esp-idf-v5.5.5"></label>
-        <label class="row"><span>Tools folder</span><input name="idf_tools_path" placeholder="C:\Espressif"></label>
-        <label class="row"><span>ESP-IDF Python</span><input name="idf_python" placeholder="C:\Espressif\python_env\idf5.5_py3.13_env\Scripts\python.exe"></label>
-      </details>
-      <p id="idfInfo" class="note"></p>
-    </fieldset>
-    <div class="dialog-actions">
-      <button value="cancel" class="btn ghost">Cancel</button>
-      <button value="save" id="settingsSave" class="btn primary">Save</button>
+    <header class="dlg-head"><h2>Settings</h2><button value="cancel" class="icon-btn" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+    <div class="dlg-body">
+      <section class="set-sec">
+        <h3>AI model</h3>
+        <div class="seg wide" id="providerSeg">
+          <label><input type="radio" name="provider" value="groq"><span><svg class="i"><use href="#i-cloud"/></svg>Groq cloud <small>best quality · needs internet</small></span></label>
+          <label><input type="radio" name="provider" value="ollama"><span><svg class="i"><use href="#i-laptop"/></svg>On this laptop <small>Ollama · works offline</small></span></label>
+        </div>
+        <label class="field"><span>Groq API key</span><input name="groq_api_key" type="password" autocomplete="off"><small>Free key from console.groq.com/keys. Stored only on this laptop.</small></label>
+        <div class="field-row">
+          <label class="field"><span>Groq model</span><select name="groq_model"></select></label>
+          <label class="field"><span>Local model</span><input name="ollama_model" placeholder="qwen2.5-coder:7b"></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>Ollama address</span><input name="ollama_host"></label>
+          <label class="field"><span>Creativity (0–1)</span><input name="temperature" type="number" min="0" max="1" step="0.1"></label>
+        </div>
+        <div class="test-row"><button type="button" id="testModelBtn" class="btn">Test connection</button><span id="testResult" class="note"></span></div>
+      </section>
+      <section class="set-sec">
+        <h3>Automatic help</h3>
+        <label class="switch"><input type="checkbox" name="auto_build"><span class="track"></span><span>Build after every AI change</span></label>
+        <label class="switch"><input type="checkbox" name="auto_fix"><span class="track"></span><span>Fix build errors with the AI</span></label>
+        <label class="switch"><input type="checkbox" name="hardware_fix"><span class="track"></span><span>Also fix pin problems found by the hardware check</span></label>
+        <label class="switch"><input type="checkbox" name="function_hints"><span class="track"></span><span>Show the AI the real functions when it makes one up</span></label>
+        <div class="field-row">
+          <label class="field"><span>Max automatic fixes</span><input name="max_fix_attempts" type="number" min="0" max="5"></label>
+          <label class="field"><span>ESP-IDF examples given to the AI</span><input name="examples_in_prompt" type="number" min="0" max="3"></label>
+        </div>
+      </section>
+      <section class="set-sec">
+        <h3>Board &amp; tools</h3>
+        <div class="field-row three">
+          <label class="field"><span>Monitor baud</span><input name="serial_baud" type="number"></label>
+          <label class="field"><span>Flash baud</span><input name="flash_baud" type="number"></label>
+          <label class="field"><span>Simulator time (s)</span><input name="sim_seconds" type="number" min="3" max="60"></label>
+        </div>
+        <details class="adv">
+          <summary>ESP-IDF location (only if it is not found automatically)</summary>
+          <label class="field"><span>ESP-IDF folder</span><input name="idf_path" placeholder="C:\Espressif\frameworks\esp-idf-v5.5.5"></label>
+          <label class="field"><span>Tools folder</span><input name="idf_tools_path" placeholder="C:\Espressif"></label>
+          <label class="field"><span>ESP-IDF Python</span><input name="idf_python" placeholder="C:\Espressif\python_env\idf5.5_py3.13_env\Scripts\python.exe"></label>
+        </details>
+        <p id="idfInfo" class="note"></p>
+      </section>
     </div>
+    <footer class="dlg-foot">
+      <span class="note" id="appVersion"></span>
+      <div class="spacer"></div>
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button value="save" class="btn primary">Save</button>
+    </footer>
   </form>
 </dialog>
 
 <dialog id="boardDialog" class="dialog">
   <form method="dialog" id="boardForm">
-    <h2>Board &amp; wiring</h2>
-    <p class="note">Tell the AI what is connected and where. It will use exactly these pins.</p>
-    <label class="row"><span>Board</span><input name="name"></label>
-    <table class="parts">
-      <thead><tr><th>Part</th><th>Pins</th><th>Notes</th><th></th></tr></thead>
-      <tbody id="partsBody"></tbody>
-    </table>
-    <button type="button" id="addPartBtn" class="btn ghost small">＋ Add part</button>
-    <label class="row stack"><span>Other notes for the AI</span><textarea name="notes" rows="2" placeholder="e.g. Active-low relay module, powered from 5 V"></textarea></label>
-    <div class="dialog-actions">
-      <button value="cancel" class="btn ghost">Cancel</button>
-      <button value="save" class="btn primary">Save</button>
+    <header class="dlg-head"><h2>Board &amp; wiring</h2><button value="cancel" class="icon-btn" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+    <div class="dlg-body">
+      <p class="note">Tell the AI what is connected and where. It will use exactly these pins, and the pin check uses them too.</p>
+      <label class="field"><span>Board</span><input name="name" placeholder="ESP32 DevKitC (ESP32-WROOM-32, 4 MB flash)"></label>
+      <div class="parts-head"><span>Part</span><span>Pins</span><span>Notes</span><span></span></div>
+      <div class="parts" id="partsBody"></div>
+      <button type="button" id="addPartBtn" class="text-btn"><svg class="i"><use href="#i-plus"/></svg>Add part</button>
+      <label class="field"><span>Other notes for the AI</span><textarea name="notes" rows="2" placeholder="e.g. Active-low relay module, powered from 5 V"></textarea></label>
     </div>
+    <footer class="dlg-foot"><div class="spacer"></div><button value="cancel" class="btn ghost">Cancel</button><button value="save" class="btn primary">Save</button></footer>
   </form>
 </dialog>
 
 <dialog id="promptDialog" class="dialog small">
   <form method="dialog">
-    <h2 id="promptTitle">Name</h2>
-    <input id="promptInput" autocomplete="off">
-    <div class="dialog-actions">
-      <button value="cancel" class="btn ghost">Cancel</button>
-      <button value="ok" class="btn primary">OK</button>
-    </div>
+    <header class="dlg-head"><h2 id="promptTitle">Name</h2></header>
+    <div class="dlg-body"><input id="promptInput" class="big-input" autocomplete="off"><p class="note" id="promptNote"></p></div>
+    <footer class="dlg-foot"><div class="spacer"></div><button value="cancel" class="btn ghost">Cancel</button><button value="ok" class="btn primary" id="promptOk">OK</button></footer>
   </form>
 </dialog>
 
-<div id="toast" class="toast hidden"></div>
+<div class="toast-stack" id="toasts" aria-live="polite"></div>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
 
 <script>
   window.MONACO_LOCAL = "/static/vendor/monaco/vs";
   window.MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs";
 </script>
 <script src="/static/js/markdown.js"></script>
+<script src="/static/js/pins.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

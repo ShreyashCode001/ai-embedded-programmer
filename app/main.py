@@ -214,6 +214,22 @@ def explain(project_id: str, body: dict[str, Any] = Body(default={})) -> Streami
     return sse(assistant_factory(load_settings()).explain(p, str(body.get("code") or "")))
 
 
+def _last_request(p: projects.Project) -> str:
+    for m in reversed(p.chat()):
+        if m.get("role") == "user" and m.get("kind", "chat") == "chat":
+            return m.get("content", "")
+    return ""
+
+
+@app.post("/api/projects/{project_id}/check")
+def check(project_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """Made-up functions, their real look-alikes, and the hardware (pin) check, without building."""
+    p = _project(project_id)
+    code = body.get("code")
+    code = code if isinstance(code, str) else p.code()
+    return assistant_factory(load_settings()).check(code, _last_request(p))
+
+
 def _save_editor(p: projects.Project, body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     code = body.get("code")
     if code and code.strip() != p.code().strip():
@@ -226,6 +242,7 @@ def _save_editor(p: projects.Project, body: dict[str, Any]) -> Iterator[dict[str
 def build(project_id: str, body: dict[str, Any] = Body(default={})) -> StreamingResponse:
     p = _project(project_id)
     a = assistant_factory(load_settings())
+    a._request = _last_request(p)
 
     def events():
         yield from _save_editor(p, body)
