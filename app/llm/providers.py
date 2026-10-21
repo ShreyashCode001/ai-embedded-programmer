@@ -35,7 +35,7 @@ Event = tuple[str, Any]
 Message = dict[str, str]
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MAX_RATE_LIMIT_RETRIES = 3
+MAX_RATE_LIMIT_RETRIES = 6
 
 
 class LLMError(RuntimeError):

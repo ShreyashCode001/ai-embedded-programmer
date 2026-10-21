@@ -49,7 +49,7 @@ MODES = {
     "plain": {"examples_in_prompt": 0, "auto_fix": False, "plain_prompt": True},
 }
 EVAL_DIR = DATA_DIR / "eval"
-NETWORK = re.compile(r"Lost the connection|did not answer in time|Could not reach", re.IGNORECASE)
+NETWORK = re.compile(r"Lost the connection|did not answer in time|Could not reach|still rate-limiting", re.IGNORECASE)
 DAILY_LIMIT = re.compile(r"per day|tokens per day|TPD|requests per day|RPD|daily", re.IGNORECASE)
 
 
