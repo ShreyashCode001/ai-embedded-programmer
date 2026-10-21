@@ -22,7 +22,9 @@ to install. The API key is sent only to Groq and never logged.
 
 from __future__ import annotations
 
+import http.client
 import json
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -55,6 +57,10 @@ def estimate_tokens(messages: list[dict[str, str]]) -> int:
 
 
 Opener = Callable[..., Any]
+
+
+# A stalled or dropped connection (timeout, reset, cut-off reply). Raised while reading the stream.
+NETWORK_ERRORS = (TimeoutError, socket.timeout, ConnectionError, http.client.HTTPException, OSError)
 
 
 def _open(request: urllib.request.Request, timeout: float) -> Any:
@@ -142,8 +148,23 @@ class GroqProvider:
                 raise LLMError(f"Groq error {exc.code}: {message}") from exc
             except urllib.error.URLError as exc:
                 raise LLMError(f"Could not reach Groq ({exc.reason}). Check your internet connection.") from exc
-            with response:
-                yield from _parse_openai_stream(response)
+            except NETWORK_ERRORS as exc:
+                if attempt < MAX_RATE_LIMIT_RETRIES:
+                    yield ("status", "Groq did not answer in time, trying again…")
+                    continue
+                raise LLMError(f"Lost the connection to Groq ({exc}). Check your internet connection.") from exc
+            got_text = False
+            try:
+                with response:
+                    for event in _parse_openai_stream(response):
+                        got_text = got_text or event[0] == "text"
+                        yield event
+            except NETWORK_ERRORS as exc:
+                # The connection stalled or dropped. If nothing arrived yet, simply ask again.
+                if not got_text and attempt < MAX_RATE_LIMIT_RETRIES:
+                    yield ("status", "Groq stopped answering, trying again…")
+                    continue
+                raise LLMError(f"Lost the connection to Groq while it was answering ({exc}). Please try again.") from exc
             return
         raise LLMError("Groq is still rate-limiting after several retries. Wait a minute and try again.")
 
@@ -230,6 +251,14 @@ class OllamaProvider:
             raise LLMError(f"Ollama error {exc.code}: {_read_error(exc)}") from exc
         except urllib.error.URLError as exc:
             raise LLMError(f"Could not reach Ollama at {self.host}: {exc.reason}") from exc
+        except NETWORK_ERRORS as exc:
+            raise LLMError(f"Ollama did not answer in time ({exc}).") from exc
+        try:
+            yield from self._read(response)
+        except NETWORK_ERRORS as exc:
+            raise LLMError(f"Lost the connection to Ollama while it was answering ({exc}).") from exc
+
+    def _read(self, response: Any) -> Iterator[Event]:
         with response:
             for raw in response:
                 line = raw.decode("utf-8", errors="replace").strip() if isinstance(raw, bytes) else str(raw).strip()

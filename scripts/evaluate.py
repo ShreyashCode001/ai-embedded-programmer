@@ -49,6 +49,7 @@ MODES = {
     "plain": {"examples_in_prompt": 0, "auto_fix": False, "plain_prompt": True},
 }
 EVAL_DIR = DATA_DIR / "eval"
+NETWORK = re.compile(r"Lost the connection|did not answer in time|Could not reach", re.IGNORECASE)
 DAILY_LIMIT = re.compile(r"per day|tokens per day|TPD|requests per day|RPD|daily", re.IGNORECASE)
 
 
@@ -159,7 +160,11 @@ def run_mode(base: dict, mode: str, items: list[dict], fresh: bool, pause: float
     log(f"=== {settings['provider']} / {model} / mode={mode}: {len(todo)} to do, {len(done)} already done ===")
     for n, item in enumerate(todo, 1):
         log(f"[{n}/{len(todo)}] {item['id']}: {item['text']}")
-        rec = run_one(settings, item, mode)
+        try:
+            rec = run_one(settings, item, mode)
+        except Exception as exc:  # never let one request stop the whole evaluation
+            log(f"      SKIPPED: unexpected problem ({type(exc).__name__}: {str(exc)[:160]}). It will be retried on the next run.")
+            continue
         if rec["error"] and DAILY_LIMIT.search(rec["error"]):
             log(f"      STOPPED: daily model limit reached ({rec['error'][:160]}). Run the same command again tomorrow to continue.")
             projects.delete(rec["project"])
@@ -169,6 +174,12 @@ def run_mode(base: dict, mode: str, items: list[dict], fresh: bool, pause: float
             log(f"      STOPPED: {rec['error']}")
             projects.delete(rec["project"])
             return "error"
+        if rec["error"] and NETWORK.search(rec["error"]):
+            # A dropped connection says nothing about the model, so it is not recorded.
+            log(f"      SKIPPED: network problem ({rec['error'][:160]}). It will be retried on the next run.")
+            projects.delete(rec["project"])
+            time.sleep(pause)
+            continue
         with open(out, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         status = "BUILD OK" if rec["final_build_ok"] else ("NO CODE" if not rec["code_produced"] else "BUILD FAILED")

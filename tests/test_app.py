@@ -129,6 +129,35 @@ def test_groq_streams_text_and_sends_budgeted_request():
     assert sent["body"]["max_completion_tokens"] <= 6000
 
 
+class StallingResponse:
+    """A reply whose connection times out before any data arrives (what Groq did on 21 Oct)."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def __iter__(self):
+        raise TimeoutError("The read operation timed out")
+
+
+def test_groq_retries_when_the_connection_stalls():
+    from app.llm.providers import GroqProvider, LLMError
+
+    calls = {"n": 0}
+
+    def opener(req, timeout):
+        calls["n"] += 1
+        return StallingResponse() if calls["n"] == 1 else FakeResponse(sse_body("ok"))
+
+    events = list(GroqProvider(api_key="k", opener=opener).stream([{"role": "user", "content": "x"}]))
+    assert ("text", "ok") in events and calls["n"] == 2
+    # Always stalling: a clear LLMError, never a crash.
+    with pytest.raises(LLMError, match="Lost the connection"):
+        list(GroqProvider(api_key="k", opener=lambda r, t: StallingResponse()).stream([{"role": "user", "content": "x"}]))
+
+
 def test_groq_waits_on_rate_limit_then_succeeds():
     from app.llm.providers import GroqProvider
 
